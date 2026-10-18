@@ -21,6 +21,24 @@ export const ATTACHMENTS_DIR = join(homedir(), '.hwip', 'attachments');
 /** The most one answer file is read into memory at: a phone attachment, not a disk image. */
 export const MAX_ANSWER_FILE_BYTES = 256 * 1024 * 1024;
 
+/** The AES-GCM tag after each sealed file's bytes. */
+const GCM_TAG_BYTES = 16;
+
+/** Padmé: the size a file is padded to before it is sealed (the apps' `Envelope.padme`). */
+const padme = (size: number): number => {
+  if (size < 2) return size;
+  const e = Math.floor(Math.log2(size));
+  const step = 2 ** (e - (Math.floor(Math.log2(e)) + 1));
+  return Math.ceil(size / step) * step;
+};
+
+/**
+ * The most a sealed answer file may download as: its seal's size padded, and the tag. The relay
+ * points at the bytes, so it could name a larger object; nothing past this is read.
+ */
+export const answerFileBound = (size: number): number =>
+  Number.isSafeInteger(size) && size >= 0 ? Math.min(padme(size) + GCM_TAG_BYTES, MAX_ANSWER_FILE_BYTES) : MAX_ANSWER_FILE_BYTES;
+
 export interface SavedAnswerFiles {
   /** Absolute paths of the files saved, in the seal's order. */
   paths: string[];
@@ -33,8 +51,8 @@ export interface AnswerFileDeps {
   selfId: string;
   /** The answering phone's key, already checked against the seal (`openAnswer`). */
   senderPublicKey: string;
-  /** fileKey → the sealed bytes. */
-  fetchBytes: (fileKey: string) => Promise<Buffer>;
+  /** fileKey → the sealed bytes, refused past `maxBytes`. */
+  fetchBytes: (fileKey: string, maxBytes: number) => Promise<Buffer>;
   /** Where the event's folder goes; `ATTACHMENTS_DIR` outside tests. */
   dir?: string;
   open?: typeof decryptFileForDevice;
@@ -120,7 +138,7 @@ export const saveAnswerFiles = async (
     }
     let bytes: Buffer;
     try {
-      bytes = await deps.fetchBytes(file.fileKey);
+      bytes = await deps.fetchBytes(file.fileKey, answerFileBound(meta.size));
     } catch {
       saved.missing.push(`${name}: download failed`);
       continue;
@@ -136,8 +154,9 @@ export const saveAnswerFiles = async (
     const size = Number.isSafeInteger(meta.size) && meta.size >= 0 ? meta.size : opened.length;
     const abs = join(folder, freeName(taken, name));
     try {
-      mkdirSync(folder, { recursive: true });
-      writeFileSync(abs, opened.subarray(0, size));
+      // The phone's files, for this user alone.
+      mkdirSync(folder, { recursive: true, mode: 0o700 });
+      writeFileSync(abs, opened.subarray(0, size), { mode: 0o600 });
     } catch {
       saved.missing.push(`${name}: not saved`);
       continue;

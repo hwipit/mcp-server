@@ -735,8 +735,9 @@ describe('registerAskTool', () => {
             const [eventId, given, metas, deps] = filesMock.saveAnswerFiles.mock.calls[0]!;
             expect([eventId, given, metas]).toEqual(['e1', wire, [meta]]);
             expect(deps).toMatchObject({ selfId: listenerDeviceId(), senderPublicKey: 'PHONE' });
-            await deps.fetchBytes('files/9');
-            expect(downloadFile).toHaveBeenCalledWith('files/9', expect.any(Number), undefined);
+            // The bound the seal gives goes through to the download.
+            await deps.fetchBytes('files/9', 26);
+            expect(downloadFile).toHaveBeenCalledWith('files/9', 26, undefined);
         });
 
         it('answer files: with no key on this machine, says so for each file instead of dropping them', async () => {

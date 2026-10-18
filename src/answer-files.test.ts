@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -157,5 +157,20 @@ describe('saveAnswerFiles — answer files', () => {
 
     expect(saved).toEqual({ paths: [], missing: ['big.mov: too large (sealed in chunks)'] });
     expect(fetchBytes).not.toHaveBeenCalled();
+  });
+
+  it('asks for no more of a file than its seal says it holds, padded, and keeps it to this user', async () => {
+    const { saveAnswerFiles, answerFileBound, MAX_ANSWER_FILE_BYTES } = await asAsker();
+    const { ciphertext, wire } = await sealFile(Buffer.from('tiny'), 'user/u/tiny');
+    const fetchBytes = vi.fn(async () => ciphertext);
+    const dir = join(TMP, 'bound');
+    const saved = await saveAnswerFiles('evt_bound', [wire], [{ iv: wire.iv, name: 'tiny.txt', type: 'text/plain', size: 4 }], {
+      selfId: 'dev_laptop', senderPublicKey: PHONE.publicKey, dir, fetchBytes,
+    });
+    expect(fetchBytes).toHaveBeenCalledWith('user/u/tiny', 4 + 16);
+    expect(statSync(saved.paths[0]!).mode & 0o777).toBe(0o600);
+    expect(statSync(join(dir, 'evt_bound')).mode & 0o777).toBe(0o700);
+    expect(answerFileBound(9)).toBe(10 + 16);
+    expect(answerFileBound(Number.NaN)).toBe(MAX_ANSWER_FILE_BYTES);
   });
 });

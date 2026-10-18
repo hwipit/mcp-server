@@ -16,7 +16,7 @@ import { openAnswer, prepareAsk, refusalMessage, type AskSealDeps, type OpenedAn
 import { liveAttach } from '../ask-context-attach.js';
 import { NO_APP_DEVICE } from '../push-audience.js';
 import { registerOverClient } from '../self-register.js';
-import { MAX_ANSWER_FILE_BYTES, saveAnswerFiles } from '../answer-files.js';
+import { saveAnswerFiles } from '../answer-files.js';
 
 /**
  * Apply the mode transition this answer implies, and tell the model where it
@@ -301,7 +301,7 @@ export const registerAskTool = (server: McpServer, client: HwipApiClient, config
             ? await saveAnswerFiles(trigger.data.eventId, event.data.response?.files, opened.files, {
               selfId,
               senderPublicKey: opened.senderPublicKey,
-              fetchBytes: (key) => client.downloadFile(key, MAX_ANSWER_FILE_BYTES, signal),
+              fetchBytes: (key, maxBytes) => client.downloadFile(key, maxBytes, signal),
             })
             : { paths: [], missing: opened.files.map((m) => `${m.name}: no key on this machine`) };
         const text = [opened.value ?? '', ...(saved?.paths ?? [])].filter(Boolean).join('\n');
