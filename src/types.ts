@@ -28,8 +28,8 @@ export interface HookEventResponse {
     response?: {
       actionId?: string;
       value?: string;
-      /** Screenshots and files the user attached to the answer — plaintext,
-       *  since the hook route carries no key this end could decrypt with. */
+      /** Files attached to the answer. To a sealed question each is sealed whole — an `iv` and a
+       *  `deviceKeyMap` slot per device, its real name and size inside the seal (answer-files.ts). */
       files?: AttachedFile[];
       /** Sent with the phone's "send and exit" button: the text is the user's
        *  last instruction and ends sticky REMOTE (remote-state.ts). */
