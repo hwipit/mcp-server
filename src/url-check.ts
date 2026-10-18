@@ -48,3 +48,24 @@ export const insecureUrlWarning = (url: string): string | null => {
     }
     return null;
 };
+
+/**
+ * Why the client will not fetch `url` as a file download, or null when it may — the cli's
+ * `downloadUrlProblem` (src/insecure-url.ts), kept in step. The URL comes from the API (`GET /files/<key>`),
+ * so a relay that rewrites the reply picks where this machine sends a GET: its loopback services, the cloud
+ * metadata address, the LAN. Only S3 over https is a download address; a loopback one only when the API is
+ * loopback too (the local server hands out its LocalStack endpoint).
+ */
+export const downloadUrlProblem = (url: string, baseUrl: string): string | null => {
+    let parsed: URL;
+    try {
+        parsed = new URL(url);
+    } catch {
+        return 'not a URL';
+    }
+    const host = parsed.hostname.replace(/\.$/, '').toLowerCase();
+    if (parsed.protocol === 'https:' && (host === 'amazonaws.com' || host.endsWith('.amazonaws.com'))) return null;
+    const apiHost = URL.canParse(baseUrl) ? new URL(baseUrl).hostname : '';
+    if ((parsed.protocol === 'http:' || parsed.protocol === 'https:') && isLoopbackHost(host) && isLoopbackHost(apiHost)) return null;
+    return `${parsed.protocol}//${parsed.host} is not an S3 download address`;
+};

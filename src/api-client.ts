@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import type { McpServerConfig } from './config.js';
 import { isRedirectRefusal } from './redirect.js';
 import { uploadContentType } from './mime.js';
+import { downloadUrlProblem } from './url-check.js';
 import type {
   ApiErrorBody,
   PushResponse,
@@ -377,6 +378,8 @@ export class HwipApiClient {
       hookType?: 'combo';
       /** This ask settles an `exitRemote` answer (tools/ask.ts). */
       acceptsExit?: boolean;
+      /** This asker saves files attached to a sealed answer; without it the phone offers none. */
+      acceptsFiles?: boolean;
       files?: AttachedFile[];
       sessionId?: string;
       /** Stable session grouping so the hook joins the agent chat. */
@@ -513,6 +516,29 @@ export class HwipApiClient {
     fileSize: number;
   }, signal?: AbortSignal): Promise<UploadRequestResponse> {
     return this.request<UploadRequestResponse>('POST', '/files/upload-request', params, DEFAULT_TIMEOUT_MS, signal);
+  }
+
+  /**
+   * The stored bytes of `fileKey`, read whole and refused past `maxBytes`. The server hands back a
+   * signed address (`GET /files/:key` → `{ downloadUrl }`); that address is the whole source, so a
+   * redirect away from it is refused like the upload's.
+   */
+  async downloadFile(fileKey: string, maxBytes: number, signal?: AbortSignal): Promise<Buffer> {
+    const meta = await this.request<{ data?: { downloadUrl?: unknown } }>('GET', `/files/${encodeURIComponent(fileKey)}`, undefined, DEFAULT_TIMEOUT_MS, signal);
+    const url = meta.data?.downloadUrl;
+    if (typeof url !== 'string') throw new ApiError('The hwip API gave no download address for the file', 'BAD_RESPONSE', 0);
+    const problem = downloadUrlProblem(url, this.baseUrl);
+    if (problem) throw new ApiError(`Refused the file's download address: ${problem}`, 'BAD_RESPONSE', 0);
+    const { signal: combined, release } = requestSignal(transferTimeoutMs(maxBytes), signal);
+    try {
+      const response = await fetch(url, { signal: combined, redirect: 'error' }).catch((err: unknown) => {
+        throw transportError(err, 'GET') ?? err;
+      });
+      if (!response.ok) throw new ApiError(`File download failed with status ${response.status}`, 'DOWNLOAD_FAILED', response.status);
+      return Buffer.from(await readCapped(response, maxBytes, () => new ApiError(`The file is larger than ${maxBytes} bytes, so it was not read`, 'DOWNLOAD_TOO_LARGE', 413)));
+    } finally {
+      release();
+    }
   }
 
   async uploadToS3(url: string, content: string | Buffer, contentType: string, signal?: AbortSignal): Promise<void> {

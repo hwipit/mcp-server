@@ -755,3 +755,36 @@ describe('triggerHook sends a question once', () => {
         expect(sent).toHaveLength(2);
     });
 });
+
+describe('downloadFile — answer files', () => {
+    const S3 = 'https://hwip-files.s3.ap-northeast-2.amazonaws.com/u/f?X-Amz-Signature=s';
+    /** The API names `url` for the key; the bytes come from there. */
+    const serving = (url: unknown, body: () => Response) => {
+        const fetchMock = vi.fn(async (target: string | URL) => String(target).startsWith('https://api.test/')
+            ? new Response(JSON.stringify({ data: { downloadUrl: url } }), { status: 200 })
+            : body());
+        vi.stubGlobal('fetch', fetchMock);
+        return fetchMock;
+    };
+
+    it('reads the bytes from the S3 address the API gives, refusing a redirect', async () => {
+        const fetchMock = serving(S3, () => new Response(new Uint8Array([1, 2, 3])));
+
+        expect([...await client().downloadFile('user/u/f', 16)]).toEqual([1, 2, 3]);
+        expect(String(fetchMock.mock.calls[0]![0])).toBe('https://api.test/files/user%2Fu%2Ff');
+        expect(fetchMock.mock.calls[1]![1]).toMatchObject({ redirect: 'error' });
+    });
+
+    it.each([['https://evil.example.com/f'], ['http://169.254.169.254/latest/meta-data'], [42]])('refuses %s without fetching it', async (url) => {
+        const fetchMock = serving(url, () => new Response('x'));
+
+        await expect(client().downloadFile('k', 16)).rejects.toMatchObject({ code: 'BAD_RESPONSE' });
+        expect(fetchMock).toHaveBeenCalledTimes(1);
+    });
+
+    it('refuses a body over the cap', async () => {
+        serving(S3, () => new Response(new Uint8Array(32)));
+
+        await expect(client().downloadFile('k', 16)).rejects.toMatchObject({ code: 'DOWNLOAD_TOO_LARGE' });
+    });
+});

@@ -52,6 +52,13 @@ const openedAs = (response: { actionId?: string; value?: string; exitRemote?: bo
     ...(response?.exitRemote ? { exit: true } : {}),
 });
 
+// Saving the files is answer-files.test.ts; here only what the tool hands it and returns.
+const filesMock = vi.hoisted(() => ({ saveAnswerFiles: vi.fn() }));
+vi.mock('../answer-files.js', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('../answer-files.js')>()),
+    saveAnswerFiles: filesMock.saveAnswerFiles,
+}));
+
 // The attachment itself is ask-context-attach.test.ts; here only what the tool hands it.
 const attachMock = vi.hoisted(() => ({ liveAttach: vi.fn(() => async () => { throw new Error('not in these tests'); }) }));
 vi.mock('../ask-context-attach.js', () => attachMock);
@@ -671,6 +678,7 @@ describe('registerAskTool', () => {
                 fallback: 'no',
                 hookType: 'combo',
                 acceptsExit: true,
+                acceptsFiles: true,
                 sessionId: 'sess_1',
             });
             expect(JSON.stringify(sent)).not.toMatch(/Deploy|secret|Yes|why\?|proj/);
@@ -703,6 +711,61 @@ describe('registerAskTool', () => {
             const result = await run({ title: 'Deploy?', actions: ACTIONS, inputType: 'text', timeout: 120 });
 
             expect(parse(result)).toEqual({ value: 'last words', timedOut: false, hwipState: 'NORMAL' });
+        });
+
+        it('answer files: saves the sealed files under the event and puts their paths after the text', async () => {
+            ready();
+            const meta = { iv: 'IV', name: 'shot.png', type: 'image/png', size: 3 };
+            sealMock.openAnswer.mockResolvedValue({ ok: true, value: 'see this', files: [meta], senderPublicKey: 'PHONE' });
+            const wire = [{ fileKey: 'files/9', fileName: 'file', fileType: 'application/octet-stream', fileSize: 16, iv: 'IV', deviceKeyMap: { me: 'w' } }];
+            polled.mockResolvedValue(event({ eventId: 'e1', status: 'responded', response: { ...SEALED_RESPONSE, files: wire } }));
+            filesMock.saveAnswerFiles.mockResolvedValue({ paths: ['/h/.hwip/attachments/e1/shot.png'], missing: ['log.txt: download failed'] });
+            const downloadFile = vi.fn(async () => Buffer.from('x'));
+            const { run } = setup({ downloadFile });
+
+            const result = await run({ title: 'Deploy?', actions: ACTIONS, inputType: 'text', timeout: 120 });
+
+            expect(parse(result)).toEqual({
+                value: 'see this\n/h/.hwip/attachments/e1/shot.png',
+                files: ['/h/.hwip/attachments/e1/shot.png'],
+                missingFiles: ['log.txt: download failed'],
+                timedOut: false,
+                hwipState: 'REMOTE',
+            });
+            const [eventId, given, metas, deps] = filesMock.saveAnswerFiles.mock.calls[0]!;
+            expect([eventId, given, metas]).toEqual(['e1', wire, [meta]]);
+            expect(deps).toMatchObject({ selfId: listenerDeviceId(), senderPublicKey: 'PHONE' });
+            // The bound the seal gives goes through to the download.
+            await deps.fetchBytes('files/9', 26);
+            expect(downloadFile).toHaveBeenCalledWith('files/9', 26, undefined);
+        });
+
+        it('answer files: with no key on this machine, says so for each file instead of dropping them', async () => {
+            ready();
+            // The key goes away after the answer opened (a keystore that stopped loading).
+            sealMock.openAnswer.mockImplementation(async () => {
+                vi.mocked(getPublicKey).mockReturnValue(null);
+                return { ok: true, value: 'see this', files: [{ iv: 'IV', name: 'shot.png', type: 'image/png', size: 3 }], senderPublicKey: 'PHONE' };
+            });
+            polled.mockResolvedValue(event({ eventId: 'e1', status: 'responded', response: SEALED_RESPONSE }));
+            const { run } = setup();
+
+            const result = await run({ title: 'Deploy?', actions: ACTIONS, inputType: 'text', timeout: 120 });
+
+            expect(parse(result)).toMatchObject({ value: 'see this', missingFiles: ['shot.png: no key on this machine'] });
+            expect(filesMock.saveAnswerFiles).not.toHaveBeenCalled();
+        });
+
+        it('answer files: an answer with no files saves nothing', async () => {
+            ready();
+            sealMock.openAnswer.mockResolvedValue({ ok: true, value: 'plain' });
+            polled.mockResolvedValue(event({ eventId: 'e1', status: 'responded', response: SEALED_RESPONSE }));
+            const { run } = setup();
+
+            const result = await run({ title: 'Deploy?', actions: ACTIONS, inputType: 'text', timeout: 120 });
+
+            expect(parse(result)).toEqual({ value: 'plain', timedOut: false, hwipState: 'REMOTE' });
+            expect(filesMock.saveAnswerFiles).not.toHaveBeenCalled();
         });
 
         it('sends nothing, and says why, when the question cannot be sealed', async () => {

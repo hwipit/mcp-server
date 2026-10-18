@@ -16,6 +16,7 @@ import { openAnswer, prepareAsk, refusalMessage, type AskSealDeps, type OpenedAn
 import { liveAttach } from '../ask-context-attach.js';
 import { NO_APP_DEVICE } from '../push-audience.js';
 import { registerOverClient } from '../self-register.js';
+import { saveAnswerFiles } from '../answer-files.js';
 
 /**
  * Apply the mode transition this answer implies, and tell the model where it
@@ -235,6 +236,8 @@ export const registerAskTool = (server: McpServer, client: HwipApiClient, config
           // Lets the phone offer "send and exit" on this ask. The approval gate
           // (cli `hwip ask`) shares the hook type but has no mode to end.
           acceptsExit: true,
+          // Lets the phone attach files to the answer: they are saved below (answer-files.ts).
+          acceptsFiles: true,
           sessionId: config.sessionId,
           agentDeviceId: config.agentDeviceId,
           agentSessionName: config.agentSessionName,
@@ -290,8 +293,22 @@ export const registerAskTool = (server: McpServer, client: HwipApiClient, config
             ...settleRemoteState({ actionId: opened.actionId, timedOut: false }),
           });
         }
+        // Files the seal names are saved to ~/.hwip/attachments/<eventId>/ and their paths follow the text,
+        // so a model reading `value` alone still finds them.
+        const selfId = sealDeps.self()?.deviceId;
+        const saved = !opened.files ? undefined
+          : opened.senderPublicKey && selfId
+            ? await saveAnswerFiles(trigger.data.eventId, event.data.response?.files, opened.files, {
+              selfId,
+              senderPublicKey: opened.senderPublicKey,
+              fetchBytes: (key, maxBytes) => client.downloadFile(key, maxBytes, signal),
+            })
+            : { paths: [], missing: opened.files.map((m) => `${m.name}: no key on this machine`) };
+        const text = [opened.value ?? '', ...(saved?.paths ?? [])].filter(Boolean).join('\n');
         return textResult({
-          value: opened.value ?? '',
+          value: text,
+          ...(saved?.paths.length ? { files: saved.paths } : {}),
+          ...(saved?.missing.length ? { missingFiles: saved.missing } : {}),
           timedOut: false,
           ...settleRemoteState({ exitRemote: opened.exit, timedOut: false }),
         });

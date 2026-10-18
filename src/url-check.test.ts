@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { insecureUrlWarning, wsUrlProblem } from './url-check.js';
+import { downloadUrlProblem, insecureUrlWarning, wsUrlProblem } from './url-check.js';
 
 describe('wsUrlProblem', () => {
     it.each([['wss://ws.hwip.app'], ['wss://ws-dev.hwip.app/'], ['ws://127.0.0.1:8080'], ['wss://h/stage?x=1']])('accepts %s', (url) => {
@@ -58,5 +58,24 @@ describe('insecureUrlWarning', () => {
 
     it('warns for a plain ws socket off this machine', () => {
         expect(insecureUrlWarning('ws://ws.example.com')).toMatch(/ws\.example\.com.*plain ws:\/\//);
+    });
+});
+
+describe('downloadUrlProblem — answer files', () => {
+    it.each([
+        ['https://hwip-files.s3.ap-northeast-2.amazonaws.com/u/f?X-Amz-Signature=s', 'https://api.hwip.app'],
+        ['http://localhost:4566/bucket/u/f', 'http://localhost:3000'],
+    ])('takes %s', (url, api) => {
+        expect(downloadUrlProblem(url, api)).toBeNull();
+    });
+
+    it.each([
+        ['https://evil.example.com/f', 'https://api.hwip.app'],
+        ['http://192.168.0.10/admin', 'http://192.168.0.2:3000'],
+        ['http://169.254.169.254/latest/meta-data', 'http://localhost:3000'],
+        ['http://localhost:4566/f', 'https://api.hwip.app'],
+        ['https://s3.amazonaws.com.evil.example/f', 'https://api.hwip.app'],
+    ])('refuses %s', (url, api) => {
+        expect(downloadUrlProblem(url, api)).toMatch(/not an S3 download address/);
     });
 });

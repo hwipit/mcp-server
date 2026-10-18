@@ -422,6 +422,23 @@ const unwrapDeviceKeyRaw = async (entryJson: string, senderPublicKeyRaw: string)
 };
 
 /**
+ * Open one sealed attachment held whole in memory (ciphertext ‖ GCM tag) with this
+ * device's slot of it (twin of the cli listener's `openSealedAttachment`). The bytes
+ * come back padded as the app sealed them; the caller cuts them to the sealed size.
+ */
+export const decryptFileForDevice = async (
+  ciphertext: Buffer,
+  iv: string,
+  entryJson: string,
+  senderPublicKeyRaw: string,
+): Promise<Buffer> => {
+  const rawKey = await unwrapDeviceKeyRaw(entryJson, senderPublicKeyRaw);
+  const fileKey = await crypto.subtle.importKey('raw', rawKey, { name: 'AES-GCM' }, false, ['decrypt']);
+  const plain = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: new Uint8Array(fromBase64(iv)) }, fileKey, new Uint8Array(ciphertext));
+  return Buffer.from(plain);
+};
+
+/**
  * The label a sealed REST command carries inside its body (M5 D8): which
  * session on which machine it is for, and a number that only grows per
  * sender. A sealed body without one is not a command. `from` is the id of the
@@ -508,6 +525,8 @@ export interface SealedFileMeta {
   name: string;
   type: string;
   size: number;
+  /** Set when the file was sealed in pieces (`file-chunk-v1`): the plain bytes in each. */
+  chunk?: number;
 }
 
 const MAX_ASK_ACTIONS = 10;
@@ -556,7 +575,8 @@ const fileMetas = (value: unknown): SealedFileMeta[] | undefined => {
     if (!('iv' in item) || !('name' in item) || !('type' in item) || !('size' in item)) return undefined;
     const { iv, name, type, size } = item;
     if (typeof iv !== 'string' || typeof name !== 'string' || typeof type !== 'string' || typeof size !== 'number') return undefined;
-    metas.push({ iv, name, type, size });
+    const chunk = 'chunk' in item && typeof item.chunk === 'number' ? item.chunk : undefined;
+    metas.push({ iv, name, type, size, ...(chunk === undefined ? {} : { chunk }) });
   }
   return metas;
 };
