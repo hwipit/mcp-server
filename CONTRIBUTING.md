@@ -31,7 +31,9 @@ environment variables listed in the [README](./README.md).
 
 - Use [Conventional Commits](https://www.conventionalcommits.org/):
   `<type>(<scope>): <description>`, for example `fix(ask): ...`. Releases are cut by
-  semantic-release from these messages, so the type decides the version bump.
+  semantic-release from these messages, so the type decides
+  whether a release is cut. While Hwip is 0.x every release is a patch bump —
+  `feat` and breaking changes included (`releaseRules` in `package.json`).
 - Open pull requests against `main`.
 - A DCO sign-off is not required. By contributing you agree that your work is
   licensed under the Apache License 2.0, as in [LICENSE](./LICENSE).
