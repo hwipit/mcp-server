@@ -1,0 +1,10 @@
+Hwip MCP server
+Copyright 2026 Hyungtak Jin
+
+This product is a fork of zeph-to/mcp-server
+(https://github.com/zeph-to/mcp-server), Copyright 2026 Zeph,
+licensed under the Apache License, Version 2.0.
+Forked from upstream commit 7b581c9dd47943dfec0445292e6502f19f1958d3
+(2026-09-27). Upstream git history was not carried over.
+
+Files modified from the original carry the same license. See LICENSE.

@@ -1,0 +1,72 @@
+{
+  "name": "@hwip/mcp-server",
+  "version": "0.0.0-semantic-release",
+  "description": "Hwip MCP server — AI agent notifications, prompts, and input via MCP protocol",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "bin": {
+    "hwip-mcp": "./dist/index.js"
+  },
+  "engines": {
+    "node": ">=18.17.0"
+  },
+  "files": [
+    "dist",
+    "!dist/**/*.map",
+    "!dist/**/*.tsbuildinfo",
+    "NOTICE"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "prepublishOnly": "npm run build"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.31.0",
+    "zod": "^3.25.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.8.0",
+    "vitest": "^4.1.11"
+  },
+  "release": {
+    "branches": [
+      "main"
+    ],
+    "plugins": [
+      "@semantic-release/commit-analyzer",
+      "@semantic-release/release-notes-generator",
+      "@semantic-release/npm",
+      "@semantic-release/github"
+    ]
+  },
+  "author": "Hwip <dev@hwip.app>",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/hwipit/mcp-server"
+  },
+  "homepage": "https://github.com/hwipit/mcp-server",
+  "bugs": {
+    "url": "https://github.com/hwipit/mcp-server/issues"
+  },
+  "keywords": [
+    "hwip",
+    "mcp",
+    "ai",
+    "notification",
+    "prompt",
+    "model-context-protocol",
+    "claude",
+    "ai-agent",
+    "devtools",
+    "cursor",
+    "gemini"
+  ],
+  "license": "Apache-2.0",
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  }
+}

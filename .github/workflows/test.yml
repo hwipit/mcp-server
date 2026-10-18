@@ -1,0 +1,31 @@
+name: test
+
+# PRs only: a push to main runs build + test again inside publish.yml
+# before releasing, so a second run here would be pure duplication.
+on:
+  pull_request:
+    branches: [main]
+
+# A new push to the same PR makes the older run moot.
+concurrency:
+  group: test-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  vitest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - run: npm ci
+
+      # Type-check (tsc). Was a separate CI workflow building on Node 18/20/22;
+      # tsc output does not depend on the Node version, so one run is enough.
+      - run: npm run build
+
+      - run: npm test

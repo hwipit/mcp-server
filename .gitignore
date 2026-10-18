@@ -1,0 +1,7 @@
+node_modules/
+dist/
+*.tsbuildinfo
+
+# Local agent notes (per-developer; never push)
+.claude/
+.codegraph/

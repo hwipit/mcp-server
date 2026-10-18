@@ -1,0 +1,12 @@
+title = "hwip mcp-server gitleaks config"
+
+[extend]
+useDefault = true
+
+# Crypto test vectors (fake keys shared with the other clients).
+[[allowlists]]
+description = "crypto test vectors"
+targetRules = ["generic-api-key"]
+paths = [
+  '''^src/[^/]+\.vectors\.json$''',
+]
