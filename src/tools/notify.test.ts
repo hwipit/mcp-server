@@ -53,9 +53,9 @@ const mkClient = (devices: unknown[] = [PHONE]) => ({
     sendPush: vi.fn<HwipApiClient['sendPush']>(async () => ({ data: { pushId: 'push_1' } }) as Awaited<ReturnType<HwipApiClient['sendPush']>>),
 });
 
-const runWith = (client: ReturnType<typeof mkClient>, args: Record<string, unknown>) => {
+const runWith = (client: ReturnType<typeof mkClient>, args: Record<string, unknown>, config = mkConfig()) => {
     const { server, run } = captureTool();
-    registerNotifyTool(server, client as unknown as HwipApiClient, mkConfig());
+    registerNotifyTool(server, client as unknown as HwipApiClient, config);
     return run({ priority: 'normal', ...args });
 };
 
@@ -186,6 +186,23 @@ describe('registerNotifyTool', () => {
         expect(push.title).toBeUndefined();
         expect(push.url).toBeUndefined();
         expect(parse(result)).toEqual({ pushId: 'push_1', fileKey: 'key_1', autoFile: true, encrypted: true });
+    });
+
+    it.each([
+        ['a short body', 'b'],
+        ['a long body sent as a file', 'x'.repeat(250)],
+    ])('threads %s into this tmux session, not a sibling Claude sessionId', async (_, body) => {
+        const client = mkClient();
+        await runWith(
+            client,
+            { title: 'T', body },
+            mkConfig({ agentDeviceId: 'dev_listener_me', agentSessionName: 'hwip-hwipit-3' }),
+        );
+        expect(client.sendPush).toHaveBeenCalledWith(expect.objectContaining({
+            sessionId: 'sess_1',
+            agentDeviceId: 'dev_listener_me',
+            agentSessionName: 'hwip-hwipit-3',
+        }));
     });
 
     it('strips leaked tool-call markup from the body before sealing', async () => {
