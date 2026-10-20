@@ -143,10 +143,15 @@ export const registerFileTool = (server: McpServer, client: HwipApiClient, confi
 
         // Step 4: Send the push. `fileType` on the descriptor stays the real
         // type — it drives how the client renders the decrypted bytes.
+        // Thread with the tmux session key, not just sessionId: a Claude UUID
+        // scan picks the newest transcript in the project, so a sibling agent
+        // in the same repo would get this file in its chat.
         const result = await client.sendPush({
           type: 'file',
           targetDeviceId: target,
           sessionId: config.sessionId,
+          ...(config.agentDeviceId ? { agentDeviceId: config.agentDeviceId } : {}),
+          ...(config.agentSessionName ? { agentSessionName: config.agentSessionName } : {}),
           body: sealed.push.body,
           isEncrypted: sealed.push.isEncrypted,
           deviceKeyMap: sealed.push.deviceKeyMap,

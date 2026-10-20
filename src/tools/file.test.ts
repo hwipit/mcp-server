@@ -99,6 +99,20 @@ describe('registerFileTool', () => {
         expect(parse(result)).toEqual({ pushId: 'push_f', fileKey: 'fk_1', fileSize: 5, encrypted: true, delivery: 'Sent via cloud' });
     });
 
+    it('threads the file into this tmux session, not a sibling Claude sessionId', async () => {
+        const client = mkClient();
+        await runWith(
+            client,
+            { fileName: 'hello.txt', content: 'hello' },
+            mkConfig({ agentDeviceId: 'dev_listener_me', agentSessionName: 'hwip-hwipit-3' }),
+        );
+        expect(client.sendPush).toHaveBeenCalledWith(expect.objectContaining({
+            sessionId: 'sess_1',
+            agentDeviceId: 'dev_listener_me',
+            agentSessionName: 'hwip-hwipit-3',
+        }));
+    });
+
     it('seals an explicit title when provided', async () => {
         await runWith(mkClient(), { fileName: 'log.txt', content: 'x', title: 'Crash log' });
 
