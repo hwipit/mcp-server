@@ -27,6 +27,9 @@ export interface McpServerConfig {
     agentSessionName?: string;
     /** Last path segment of the project directory — prefixed onto push titles. */
     projectName: string;
+    /** `HWIP_AUTONAME` — the agent names its own session (`hwip_session_title`).
+     *  Set by the installer only for agents with no title of their own. */
+    autoName?: boolean;
 }
 
 const PROJECT_DIR_ENV_KEYS = ['CLAUDE_PROJECT_DIR', 'CURSOR_PROJECT_DIR', 'WINDSURF_PROJECT_DIR'] as const;
@@ -453,6 +456,7 @@ export const loadConfig = (): McpServerConfig => {
         agentDeviceId: listenerDeviceId(),
         agentSessionName: detectTmuxSessionName(),
         projectName: projectNameFromDir(projectDir),
+        autoName: envIsTrue('HWIP_AUTONAME'),
     };
 };
 

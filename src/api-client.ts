@@ -489,6 +489,17 @@ export class HwipApiClient {
     );
   }
 
+  /** The name the agent gives its own session — beside the user's alias, never over it. */
+  async setAgentSessionAutoName(deviceId: string, name: string, autoName: string): Promise<AgentSessionRenameResponse> {
+    assertPathId('deviceId', deviceId);
+    assertSessionName(name);
+    return this.request<AgentSessionRenameResponse>(
+      'PATCH',
+      `/devices/${encodeURIComponent(deviceId)}/agent-sessions/${encodeURIComponent(name)}/auto-name`,
+      { autoName },
+    );
+  }
+
   async listPushes(params?: { limit?: number; type?: string }): Promise<PushListResponse> {
     const query = new URLSearchParams();
     if (params?.limit) query.set('limit', String(params.limit));
