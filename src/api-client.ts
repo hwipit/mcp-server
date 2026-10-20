@@ -350,9 +350,9 @@ export class HwipApiClient {
     type?: string;
     priority?: string;
     targetDeviceId?: string;
-    /** With `type: 'agent.command'`: the tmux session on `targetDeviceId` to type the body into. */
+    /** With `type: 'agent.command'`: the tmux session on `targetDeviceId` to type the body into. With `agentDeviceId` on a file/notify/clipboard push: the agent chat to thread it into. */
     agentSessionName?: string;
-    /** Listener device id. With `agentSessionName`, threads a file/notify into that agent chat instead of resolving `sessionId` (which can be a sibling Claude session in the same project). */
+    /** Listener device id. With `agentSessionName`, threads a file/notify/clipboard push into that agent chat instead of resolving `sessionId` (which can be a sibling Claude session in the same project). */
     agentDeviceId?: string;
     channelId?: string;
     sessionId?: string;

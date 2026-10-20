@@ -42,6 +42,9 @@ export const registerClipboardTool = (server: McpServer, client: HwipApiClient, 
           type: 'clipboard',
           targetDeviceId: targetDeviceId ?? config.deviceId,
           sessionId: config.sessionId,
+          // Same threading as hwip_file / hwip_notify: the tmux key, not a sessionId guess.
+          ...(config.agentDeviceId ? { agentDeviceId: config.agentDeviceId } : {}),
+          ...(config.agentSessionName ? { agentSessionName: config.agentSessionName } : {}),
         });
         return textResult({ pushId: result.data.pushId });
       } catch (err) {

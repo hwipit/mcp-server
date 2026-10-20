@@ -56,6 +56,24 @@ describe('registerClipboardTool', () => {
         if (refused) expect(parse(result)).toMatchObject({ error: 'BODY_TOO_LONG', suggestion: expect.stringContaining('hwip_file') });
     });
 
+    it('threads the clipboard into this tmux session, not a sibling Claude sessionId', async () => {
+        const client = {
+            sendPush: vi.fn(async () => ({ data: { pushId: 'pc' } })),
+        } satisfies Partial<HwipApiClient>;
+        const { server, run } = captureTool();
+        registerClipboardTool(server, client as unknown as HwipApiClient, {
+            ...config, agentDeviceId: 'dev_listener_me', agentSessionName: 'hwip-hwipit-3',
+        });
+
+        await run({ text: 'copy me' });
+
+        expect(client.sendPush).toHaveBeenCalledWith(expect.objectContaining({
+            sessionId: 'sess_1',
+            agentDeviceId: 'dev_listener_me',
+            agentSessionName: 'hwip-hwipit-3',
+        }));
+    });
+
     it('routes to an explicit targetDeviceId when given', async () => {
         const client = {
             sendPush: vi.fn(async () => ({ data: { pushId: 'pc' } })),
