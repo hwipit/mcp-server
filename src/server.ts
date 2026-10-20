@@ -13,6 +13,7 @@ import { registerFileTool } from './tools/file.js';
 import { registerAskTool } from './tools/ask.js';
 import { registerAgentListTool, registerAgentReadTool } from './tools/agent-local.js';
 import { registerRenameTool } from './tools/rename.js';
+import { registerTitleTool, TITLE_INSTRUCTION } from './tools/title.js';
 import { registerAgentSendTool } from './tools/agent-send.js';
 import { registerLookupTools } from './tools/lookup.js';
 import { registerDevicesResource } from './resources/devices.js';
@@ -43,6 +44,7 @@ export const createServer = (config: McpServerConfig) => {
         'Hwip sends pushes, files, and clipboard text to the user\'s devices.',
         'Questions for the user\'s phone go through hwip_ask (needs HWIP_HOOK_ID).',
         'Resources: hwip://devices (online devices), hwip://channels (broadcast targets).',
+        ...(config.autoName ? [TITLE_INSTRUCTION] : []),
       ].join('\n'),
     },
   );
@@ -56,6 +58,7 @@ export const createServer = (config: McpServerConfig) => {
   registerFileTool(server, client, config);
   registerAskTool(server, client, config, waiter);
   registerRenameTool(server, client, config);
+  if (config.autoName) registerTitleTool(server, client, config);
   registerAgentSendTool(server, client, config);
   registerAgentListTool(server);
   registerAgentReadTool(server);

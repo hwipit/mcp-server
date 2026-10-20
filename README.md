@@ -82,6 +82,7 @@ e.g. a second account:
 | `HWIP_BASE_URL` | No | API base URL (default: `https://api.hwip.app/v1`). A base URL that answers with a redirect is refused (`REDIRECT_REFUSED`): requests that carry your API key never follow one |
 | `HWIP_WS_URL` | No | **Deprecated.** WebSocket endpoint for the hook-response fast path. `wsUrl` in `~/.hwip/config.json` wins over it and is where the value belongs; this is read only when the file has none, so a machine that predates the config field keeps working. It will stop being read |
 | `HWIP_DISABLE_SESSION_CACHE` | No | Set to `1`/`true` to skip writing the session-id handoff file under `~/.cache/hwip/`. Useful for read-only filesystems, ephemeral CI runners, or sandboxed envs that audit filesystem writes. The plugin's stop hook still works without it (transcript-path UUID extraction is the primary path; the cache is a fallback for older Claude Code versions). |
+| `HWIP_AUTONAME` | No | Set to `1`/`true` to offer `hwip_session_title`, so the agent names its own session. `hwip install` sets it for agents with no session title of their own |
 | `HWIP_SESSION_ID` | No | Override the session id attached to pushes (grouping in the app). Auto-detected from the newest Claude Code transcript when unset |
 
 \* If env vars are not set, the server reads from `~/.hwip/config.json` (created by `hwip install` or `hwip login`). Unresolved `${...}` interpolations are also treated as unset.
@@ -220,6 +221,16 @@ alias: "Prod deploy watcher"   (1-60 chars)
 ```
 
 Returns: `{ renamed: true, session: "hwip-myapp", alias: "Prod deploy watcher" }`, or `{ renamed: false, reason: "..." }` when there's no active session to rename (not running inside a `hwip listener` tmux session).
+
+### hwip_session_title
+
+Only with `HWIP_AUTONAME=1`. `hwip install` sets it for agents that have no session title of their own (Codex, Cursor, Windsurf, Gemini), so the phone shows what each session was asked to do. With it the server also adds one line to its instructions: name the session after the first request, and again only when the task changes — verb + object, the user's language, at most 40 characters, without mentioning it to the user. Claude Code and opencode title their sessions themselves, and `hwip` reads those titles, so they never get this tool.
+
+```
+title: "Downloads 폴더 정리"   (1-40 chars, the user's language)
+```
+
+The title is not the user's alias: a name set with `hwip_session_rename` or in the app still shows over it, and the user can hide agent-made names in the app's settings (Settings › Sessions). Returns `{ titled: true, session: "hwip-myapp", title: "…" }`, or `{ titled: false, reason: "..." }` when there is no session to title, or when the server refused the title (a session the listener has not reported yet, or an API without this route).
 
 ### hwip_agent_send
 
@@ -385,7 +396,7 @@ The API key needs the following scopes:
 - `push:read` — for `hwip_list`
 - `push:write` — for `hwip_notify`, `hwip_clipboard`, `hwip_dismiss`, `hwip_dismiss_all`, `hwip_file`, `hwip_agent_send`
 - `hook:write` — for `hwip_ask`
-- `device:write` — for `hwip_session_rename`
+- `device:write` — for `hwip_session_rename` and `hwip_session_title`
 - `channel:read` — for `hwip_channels` and the `hwip://channels` resource
 
 `hwip_agent_list` and `hwip_agent_read` need no scope: they run the local `hwip` CLI and never call the API.

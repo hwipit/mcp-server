@@ -350,12 +350,25 @@ describe('path segments', () => {
         ['an id longer than an id is', () => client().dismissPush('x'.repeat(129))],
         ['a separator in the session name', () => client().renameAgentSession('dev_listener_0a1b2c3d', 'a/b', 'alias')],
         ['a dot-dot session name', () => client().renameAgentSession('dev_listener_0a1b2c3d', '..', 'alias')],
+        ['a separator in the session name to title', () => client().setAgentSessionAutoName('dev_listener_0a1b2c3d', 'a/b', 'Fix login')],
     ])('refuses %s before sending, once', async (_name, call) => {
         const fetchMock = vi.fn(async () => new Response('{}'));
         vi.stubGlobal('fetch', fetchMock);
 
         await expect(call()).rejects.toMatchObject({ code: 'INVALID_ID', status: 400 });
         expect(fetchMock).not.toHaveBeenCalled();
+    });
+
+    it('titles a session through its auto-name path, with the title as autoName', async () => {
+        const fetchMock = vi.fn(async () => new Response('{"data":{}}'));
+        vi.stubGlobal('fetch', fetchMock);
+
+        await client().setAgentSessionAutoName('dev_listener_0a1b2c3d', 'hwip-my project', 'Fix login');
+
+        const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit]; // fetch(url, init) — the mock's own typing has no params
+        expect(url).toBe('https://api.test/devices/dev_listener_0a1b2c3d/agent-sessions/hwip-my%20project/auto-name');
+        expect(init.method).toBe('PATCH');
+        expect(JSON.parse(String(init.body))).toEqual({ autoName: 'Fix login' });
     });
 
     it('still renames a session whose name is not server-shaped', async () => {
