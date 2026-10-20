@@ -56,9 +56,10 @@ export const registerTitleTool = (server: McpServer, client: HwipApiClient, conf
         await client.setAgentSessionAutoName(agentDeviceId, agentSessionName, title);
         return textResult({ titled: true, session: agentSessionName, title });
       } catch (err) {
-        // A title the server will not take (the listener has not reported this
-        // session yet: 400; a server without the route or the device: 404)
-        // costs the user nothing — say so instead of failing the turn.
+        // A title that cannot be stored (any 400 — a session the listener has not
+        // reported yet, a tmux name the client refuses, the device's title cap;
+        // a server without the route or the device: 404) costs the user
+        // nothing — say so instead of failing the turn.
         if (err instanceof ApiError && (err.status === 400 || err.status === 404)) {
           return textResult({ titled: false, reason: err.message });
         }
