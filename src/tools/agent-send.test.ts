@@ -258,7 +258,7 @@ describe('hwip_agent_send', () => {
 
             expect(result.isError).toBe(true);
             expect(parse(result).message).toBe(
-                'sealed send: could not register this machine\'s key in the account\'s device list (the account lists another key for it, and only an API key with push:read may replace it); the message was not sent',
+                'sealed send: could not register this machine\'s key in the account\'s device list (the account lists another key for it, and only an API key with device:write and push:read may replace it); the message was not sent',
             );
             expect(client.sendPush).not.toHaveBeenCalled();
         });

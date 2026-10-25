@@ -297,15 +297,15 @@ describe('prepareAsk', () => {
   });
 
   it.each([
-    ['the server has no such route yet', 'http 404'],
-    ['the server cannot be reached', 'network'],
-    ['the server does not answer', 'timeout'],
-    ['the API key may not write it', 'http 403'],
-  ] as const)('refuses, sending nothing, when this machine cannot be registered: %s', async (_name, why) => {
+    ['the server has no such route yet', 'http 404', 'http 404'],
+    ['the server cannot be reached', 'network', 'network'],
+    ['the server does not answer', 'timeout', 'timeout'],
+    ['the API key may not write it', 'http 403', 'add-forbidden'],
+  ] as const)('refuses, sending nothing, when this machine cannot be registered: %s', async (_name, answered, why) => {
     const { seal } = await asDevice(ASKER);
     const sealIt = vi.fn();
 
-    const prepared = await seal.prepareAsk(QUESTION, depsFor({ listDevices: async () => [LISTED[1]!], register: async () => why, seal: sealIt }));
+    const prepared = await seal.prepareAsk(QUESTION, depsFor({ listDevices: async () => [LISTED[1]!], register: async () => answered, seal: sealIt }));
 
     expect(prepared).toEqual({ kind: 'refused', cause: 'self-unlisted', why });
     expect(sealIt).not.toHaveBeenCalled();
@@ -320,7 +320,7 @@ describe('prepareAsk', () => {
 
     expect(prepared).toEqual({ kind: 'refused', cause: 'self-unlisted', why: 'replace-forbidden' });
     expect(seal.refusalMessage('self-unlisted', 'replace-forbidden')).toBe(
-      'sealed ask: could not register this machine\'s key in the account\'s device list (the account lists another key for it, and only an API key with push:read may replace it); the question was not sent',
+      'sealed ask: could not register this machine\'s key in the account\'s device list (the account lists another key for it, and only an API key with device:write and push:read may replace it); the question was not sent',
     );
   });
 

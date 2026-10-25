@@ -135,7 +135,7 @@ describe('registerFileTool', () => {
         const result = await runWith(client, { fileName: 'hello.txt', content: 'hello' });
 
         expect(parse(result).pushId).toBe('push_f');
-        expect(result.content[1]).toEqual({ type: 'text', text: 'Note: could not register this machine\'s key (the server answered HTTP 403) — the app cannot verify who sent this push' });
+        expect(result.content[1]).toEqual({ type: 'text', text: 'Note: could not register this machine\'s key (only an API key with device:write may add it) — the app cannot verify who sent this push' });
     });
 
     it('does not send a push when the S3 upload fails', async () => {

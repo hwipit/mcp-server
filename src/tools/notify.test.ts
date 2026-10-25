@@ -122,9 +122,9 @@ describe('registerNotifyTool', () => {
         const result = await runWith(client, { title: 'Build done', body: 'short body' });
 
         expect(parse(result)).toEqual({ pushId: 'push_1', encrypted: true });
-        expect(console.error).toHaveBeenCalledWith('[hwip] could not register this machine\'s key (the server answered HTTP 403) — the app cannot verify who sent this push');
+        expect(console.error).toHaveBeenCalledWith('[hwip] could not register this machine\'s key (only an API key with device:write may add it) — the app cannot verify who sent this push');
         // This server's stderr reaches nobody: the result the agent reads says it.
-        expect(result.content[1]).toEqual({ type: 'text', text: 'Note: could not register this machine\'s key (the server answered HTTP 403) — the app cannot verify who sent this push' });
+        expect(result.content[1]).toEqual({ type: 'text', text: 'Note: could not register this machine\'s key (only an API key with device:write may add it) — the app cannot verify who sent this push' });
     });
 
     it('notes a registration that keeps failing the same way once per process, and stderr every time', async () => {
