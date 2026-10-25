@@ -157,7 +157,7 @@ describe('resolveAudience', () => {
         ['the server cannot be reached', [PHONE], new ApiError('unreachable', 'NETWORK_ERROR', 0), 'could not reach the server'],
         ['the server does not answer', [PHONE], new ApiError('slow', 'API_TIMEOUT', 408), 'the server did not answer in time'],
         ['the API key may not replace the listed key', [PHONE, { deviceId: 'dev_pc', publicKey: 'old-key', type: 'cli' }], new ApiError('forbidden', 'FORBIDDEN', 403),
-            'the account lists another key for it, and only an API key with push:read may replace it'],
+            'the account lists another key for it, and only an API key with device:write and push:read may replace it'],
     ] as const)('still seals, with one line on stderr, when registering fails: %s', async (_name, devices, err, why) => {
         withKeys();
         const client = clientWith([...devices], vi.fn(async (): Promise<unknown> => { throw err; }));

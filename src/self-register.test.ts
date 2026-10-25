@@ -46,13 +46,13 @@ describe('ensureSelfListed', () => {
     expect(await ensureSelfListed([], self, async () => why)).toEqual({ ok: false, why });
   });
 
-  // The server lets only a push:read key replace a listed key; an empty slot any of the three scopes may fill.
+  // Writing the key takes device:write; replacing a listed one takes push:read as well.
   it('names a 403 on replacing a listed key apart from a 403 on a missing one', async () => {
     const self = { deviceId: SELF_ID, publicKey: await newKey() };
     const stale = { deviceId: SELF_ID, publicKey: await newKey() };
 
     expect(await ensureSelfListed([stale], self, async () => 'http 403')).toEqual({ ok: false, why: 'replace-forbidden' });
-    expect(await ensureSelfListed([], self, async () => 'http 403')).toEqual({ ok: false, why: 'http 403' });
+    expect(await ensureSelfListed([], self, async () => 'http 403')).toEqual({ ok: false, why: 'add-forbidden' });
   });
 });
 
@@ -90,7 +90,8 @@ describe('what a person reads', () => {
     ['http 404', 'the server answered HTTP 404'],
     ['network', 'could not reach the server'],
     ['timeout', 'the server did not answer in time'],
-    ['replace-forbidden', 'the account lists another key for it, and only an API key with push:read may replace it'],
+    ['replace-forbidden', 'the account lists another key for it, and only an API key with device:write and push:read may replace it'],
+    ['add-forbidden', 'only an API key with device:write may add it'],
   ] as const)('%s', (why: RegisterWhy, text) => {
     expect(registerWhyText(why)).toBe(text);
   });
