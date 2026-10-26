@@ -182,20 +182,27 @@ priority:  "normal"
 
 ### hwip_file
 
-Send a file to the user's device. Either `filePath` (a file already on disk) or
-`content` (text you generated) is required.
+Send files to the user's device. One of `filePath` (a file already on disk),
+`filePaths` (several files on disk) or `content` (text you generated) is required.
 
 ```
 filePath:       "/abs/path/screenshot.png"  (images, PDFs, logs — anything on disk)
+filePaths:      ["/abs/a.png", "/abs/b.png"] (up to 20, sent together; not with filePath or content)
 content:        "{\"status\": \"ok\"}"       (text only; requires fileName)
 fileName:       "report.json"               (required with content; defaults to basename of filePath)
-title:          "Build Report"              (optional, defaults to fileName)
+title:          "Build Report"              (optional, defaults to fileName, or "N files")
 targetDeviceId: "dev_..."                   (optional)
 ```
 
 Images are delivered with their real mime type and render inline on the device.
 Never base64 a binary file into `content` — pass `filePath` and the server reads
 the bytes off disk.
+
+Several files asked for at once (screenshots of one change, a set of logs) go in
+one call with `filePaths`: they arrive as one message, five to a push (the
+server's limit), so seven files are two pushes titled `… (1/2)` and `… (2/2)`.
+Every path is checked before anything is read or sent — one unreadable path
+sends none. The result is `{ pushIds, fileCount, encrypted, delivery }`.
 
 The file is read into memory whole, so a path that is not a regular file, or is
 over 1 GiB (the most any plan sends), is refused with `FILE_READ_FAILED` or
