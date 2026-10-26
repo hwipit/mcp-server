@@ -324,3 +324,110 @@ describe('registerFileTool — no plaintext', () => {
         expectNothingSent(client);
     });
 });
+
+// Several screenshots asked for at once came as one push each: a bubble per picture. `filePaths` carries them
+// together, as many to a push as the server takes.
+describe('registerFileTool — several files', () => {
+    const writeFiles = (count: number) => {
+        const dir = mkdtempSync(join(tmpdir(), 'hwip-many-'));
+        const paths = Array.from({ length: count }, (_, i) => {
+            const path = join(dir, `shot-${i + 1}.png`);
+            writeFileSync(path, `png-${i + 1}`);
+            return path;
+        });
+        return { paths, done: () => rmSync(dir, { recursive: true, force: true }) };
+    };
+
+    it('sends every file in one push, each sealed and uploaded', async () => {
+        const { paths, done } = writeFiles(3);
+        try {
+            const client = mkClient();
+            client.requestUpload
+                .mockResolvedValueOnce({ data: { fileId: 'f1', fileKey: 'fk_1', uploadUrl: 'https://s3/1' } })
+                .mockResolvedValueOnce({ data: { fileId: 'f2', fileKey: 'fk_2', uploadUrl: 'https://s3/2' } })
+                .mockResolvedValueOnce({ data: { fileId: 'f3', fileKey: 'fk_3', uploadUrl: 'https://s3/3' } });
+
+            const result = await runWith(client, { filePaths: paths, title: 'Lounge' });
+
+            expect(encryptFileForDevices).toHaveBeenCalledTimes(3);
+            expect(client.uploadToS3).toHaveBeenCalledTimes(3);
+            expect(encryptPushBodyForDevices).toHaveBeenCalledTimes(1);
+            expect(encryptPushBodyForDevices).toHaveBeenCalledWith({ title: 'proj · Lounge' }, RECIPIENTS);
+            expect(client.sendPush).toHaveBeenCalledTimes(1);
+            const files = client.sendPush.mock.calls[0][0].files!;
+            expect(files.map((f) => [f.fileKey, f.fileName, f.fileType])).toEqual([
+                ['fk_1', 'shot-1.png', 'image/png'],
+                ['fk_2', 'shot-2.png', 'image/png'],
+                ['fk_3', 'shot-3.png', 'image/png'],
+            ]);
+            expect(parse(result)).toEqual({ pushIds: ['push_f'], fileCount: 3, encrypted: true, delivery: 'Sent via cloud' });
+        } finally {
+            done();
+        }
+    });
+
+    it('names a push of several files by their count when no title is given', async () => {
+        const { paths, done } = writeFiles(2);
+        try {
+            await runWith(mkClient(), { filePaths: paths });
+
+            expect(encryptPushBodyForDevices).toHaveBeenCalledWith({ title: 'proj · 2 files' }, RECIPIENTS);
+        } finally {
+            done();
+        }
+    });
+
+    it('splits more files than a push takes into pushes of five, in order', async () => {
+        const { paths, done } = writeFiles(7);
+        try {
+            const client = mkClient();
+            client.sendPush
+                .mockResolvedValueOnce({ data: { pushId: 'push_a' } } as Awaited<ReturnType<HwipApiClient['sendPush']>>)
+                .mockResolvedValueOnce({ data: { pushId: 'push_b' } } as Awaited<ReturnType<HwipApiClient['sendPush']>>);
+
+            const result = await runWith(client, { filePaths: paths, title: 'Shots' });
+
+            expect(client.sendPush.mock.calls.map(([push]) => push.files!.map((f) => f.fileName))).toEqual([
+                ['shot-1.png', 'shot-2.png', 'shot-3.png', 'shot-4.png', 'shot-5.png'],
+                ['shot-6.png', 'shot-7.png'],
+            ]);
+            expect(vi.mocked(encryptPushBodyForDevices).mock.calls.map(([body]) => body)).toEqual([
+                { title: 'proj · Shots (1/2)' },
+                { title: 'proj · Shots (2/2)' },
+            ]);
+            expect(parse(result)).toEqual({ pushIds: ['push_a', 'push_b'], fileCount: 7, encrypted: true, delivery: 'Sent via cloud' });
+        } finally {
+            done();
+        }
+    });
+
+    it('sends nothing when any one of the files cannot be read', async () => {
+        const { paths, done } = writeFiles(2);
+        try {
+            const client = mkClient();
+
+            const result = await runWith(client, { filePaths: [...paths, join(tmpdir(), 'hwip-missing-7c1e.png')] });
+
+            expect(parse(result).error).toBe('FILE_READ_FAILED');
+            expectNothingSent(client);
+        } finally {
+            done();
+        }
+    });
+
+    it('refuses filePaths together with filePath or content', async () => {
+        const { paths, done } = writeFiles(1);
+        try {
+            const client = mkClient();
+
+            const withPath = await runWith(client, { filePaths: paths, filePath: paths[0] });
+            const withContent = await runWith(client, { filePaths: paths, content: 'x', fileName: 'x.txt' });
+
+            expect(parse(withPath).error).toBe('INVALID_INPUT');
+            expect(parse(withContent).error).toBe('INVALID_INPUT');
+            expectNothingSent(client);
+        } finally {
+            done();
+        }
+    });
+});
