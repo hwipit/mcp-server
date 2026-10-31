@@ -10,8 +10,9 @@ import { listAgentTargets } from '../agent-target.js';
 /**
  * `hwip_agent_list` / `hwip_agent_read` — the agent sessions on THIS machine, through the
  * `hwip` CLI (`hwip agent list|read --json`). The CLI owns tmux, the screens and the
- * transcript files; this file only runs it and passes its one JSON object on. No API key,
- * no server and no relay is involved, so the tools take no client and no config.
+ * transcript files; this file only runs it and passes its one JSON object on. Without `all`
+ * no API key, no server and no relay is involved; `hwip_agent_list` with `all` reads the
+ * account's device list instead, so it alone takes the client and the config.
  */
 
 const CLI_TIMEOUT_MS = 15_000;
