@@ -11,7 +11,7 @@ import { registerDismissTool, registerDismissAllTool } from './tools/dismiss.js'
 import { registerBroadcastTool } from './tools/broadcast.js';
 import { registerFileTool } from './tools/file.js';
 import { registerAskTool } from './tools/ask.js';
-import { registerAgentListTool, registerAgentReadTool } from './tools/agent-local.js';
+import { execHwip, registerAgentListTool, registerAgentReadTool } from './tools/agent-local.js';
 import { registerRenameTool } from './tools/rename.js';
 import { registerTitleTool, TITLE_INSTRUCTION } from './tools/title.js';
 import { registerAgentSendTool } from './tools/agent-send.js';
@@ -60,7 +60,7 @@ export const createServer = (config: McpServerConfig) => {
   registerRenameTool(server, client, config);
   if (config.autoName) registerTitleTool(server, client, config);
   registerAgentSendTool(server, client, config);
-  registerAgentListTool(server);
+  registerAgentListTool(server, execHwip, client, config);
   registerAgentReadTool(server);
   registerLookupTools(server, client);
   registerDevicesResource(server, client);

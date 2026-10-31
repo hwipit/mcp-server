@@ -62,6 +62,7 @@ export interface DeviceRecord {
     providerSessionHandle?: string | null;
     /** The agent state the listener last reported (`working`, `idle`, …). */
     state?: string;
+    lastActivityAt?: string;
     /** Set on a view-only subagent pane. */
     parentName?: string;
     /** What runs in the session: an agent kind (`claude`, `pi`, …) or `shell` for a `hwip sh` session. */
