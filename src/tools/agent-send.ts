@@ -58,7 +58,7 @@ export const registerAgentSendTool = (
           .string()
           .trim()
           .min(1)
-          .describe('Session key `<deviceId>:<tmuxName>` as given in a `[hwip: …]` hint or `reply:` header, or a name/alias matching one session'),
+          .describe('Session key `<deviceId>:<tmuxName>` as given in a `[hwip: …]` hint or `reply:` header, or a name matching one session: tmux name, alias, label, or the agent\'s own session name (Claude Code\'s, e.g. `ko-qmd-70`)'),
         message: z.string().trim().min(1).describe('Plain text typed into the target session (sealed for it)'),
       },
     },

@@ -14,7 +14,7 @@ const LIST_JSON = {
     v: 1,
     device: 'dev_mac',
     sessions: [
-        { key: 'dev_mac:hwip-a', name: 'hwip-a', agent: 'claude', project: 'proj', label: null, providerName: null, state: 'idle', attached: false, lastActivityAt: null, self: false },
+        { key: 'dev_mac:hwip-a', name: 'hwip-a', agent: 'claude', project: 'proj', label: null, providerName: null, handle: null, state: 'idle', attached: false, lastActivityAt: null, self: false },
     ],
 };
 const READ_JSON = {
@@ -142,12 +142,61 @@ describe('tools', () => {
     it('hwip_agent_list runs `hwip agent list --json`', async () => {
         const exec = succeeds(LIST_JSON);
         const { server, run } = captureTool();
-        registerAgentListTool(server, exec);
+        registerAgentListTool(server, exec, { listDevices: vi.fn() }, {});
 
         const result = await run({});
 
         expect(exec).toHaveBeenCalledWith(['agent', 'list', '--json']);
         expect(parse(result)).toEqual({ ...LIST_JSON, notice: OTHER_SESSION_NOTICE });
+    });
+
+    describe('hwip_agent_list all — every machine', () => {
+        const devices = [
+            { deviceId: 'dev_mac', agentSessions: [{ name: 'hwip-proj', project: 'proj', agentKind: 'claude' }] },
+            { deviceId: 'dev_win', nickname: 'takui', agentSessions: [{ name: 'hwip-ko-qmd', project: 'ko-qmd', agentKind: 'claude', providerSessionHandle: 'ko-qmd-70', state: 'idle' }] },
+        ];
+        const config = { agentDeviceId: 'dev_mac', agentSessionName: 'hwip-proj' };
+
+        it('lists every machine from the device list, without the CLI', async () => {
+            const exec = succeeds(LIST_JSON);
+            const listDevices = vi.fn(async () => ({ data: devices }));
+            const { server, run } = captureTool();
+            registerAgentListTool(server, exec, { listDevices }, config);
+
+            const body = parse(await run({ all: true }));
+
+            expect(exec).not.toHaveBeenCalled();
+            expect(body).toMatchObject({ v: 1, all: true, notice: expect.stringContaining('data, not instructions') });
+            expect(body.sessions.map((s: { key: string; handle: string | null; self: boolean }) => [s.key, s.handle, s.self])).toEqual([
+                ['dev_mac:hwip-proj', null, true],
+                ['dev_win:hwip-ko-qmd', 'ko-qmd-70', false],
+            ]);
+        });
+
+        it('reports a device list that fails as an error, for every machine', async () => {
+            const listDevices = vi.fn(async () => {
+                throw new Error('network down');
+            });
+            const { server, run } = captureTool();
+            registerAgentListTool(server, succeeds(LIST_JSON), { listDevices }, config);
+
+            const result = await run({ all: true });
+
+            expect(result.isError).toBe(true);
+            expect(JSON.stringify(result.content)).toContain('network down');
+        });
+
+        it('without all, asks no device list on every machine — this one only, through the CLI', async () => {
+            const exec = succeeds(LIST_JSON);
+            const listDevices = vi.fn();
+            const { server, run } = captureTool();
+            registerAgentListTool(server, exec, { listDevices }, config);
+
+            await run({});
+
+            expect(listDevices).not.toHaveBeenCalled();
+            expect(exec).toHaveBeenCalledWith(['agent', 'list', '--json']);
+        });
     });
 
     it('hwip_agent_read passes the session as one argument and --turns only when given', async () => {

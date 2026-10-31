@@ -58,6 +58,11 @@ export interface DeviceRecord {
     label?: string | null;
     /** The name the agent calls the session (what the app shows). */
     providerSessionName?: string | null;
+    /** The agent's own name for the session, shown or not — Claude Code's `ko-qmd-70` (hwip `AgentSession.providerSessionHandle`). */
+    providerSessionHandle?: string | null;
+    /** The agent state the listener last reported (`working`, `idle`, …). */
+    state?: string;
+    lastActivityAt?: string;
     /** Set on a view-only subagent pane. */
     parentName?: string;
     /** What runs in the session: an agent kind (`claude`, `pi`, …) or `shell` for a `hwip sh` session. */
