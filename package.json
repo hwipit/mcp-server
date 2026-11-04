@@ -1,6 +1,7 @@
 {
   "name": "@hwip/mcp-server",
   "version": "0.0.0-semantic-release",
+  "mcpName": "io.github.hwipit/mcp-server",
   "description": "Hwip MCP server — AI agent notifications, prompts, and input via MCP protocol",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
