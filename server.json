@@ -1,0 +1,30 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.hwipit/mcp-server",
+  "title": "Hwip",
+  "description": "Notify your phone, ask questions and get answers back from AI coding agents via Hwip.",
+  "repository": {
+    "url": "https://github.com/hwipit/mcp-server",
+    "source": "github"
+  },
+  "version": "0.0.0",
+  "packages": [
+    {
+      "registryType": "npm",
+      "identifier": "@hwip/mcp-server",
+      "version": "0.0.0",
+      "transport": {
+        "type": "stdio"
+      },
+      "environmentVariables": [
+        {
+          "description": "Your Hwip API key. Optional when ~/.hwip/config.json (from `hwip login`) holds one.",
+          "isRequired": false,
+          "format": "string",
+          "isSecret": true,
+          "name": "HWIP_API_KEY"
+        }
+      ]
+    }
+  ]
+}
