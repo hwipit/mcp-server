@@ -210,6 +210,13 @@ over 1 GiB (the most any plan sends), is refused with `FILE_READ_FAILED` or
 checked by the server. Upload and download time out after 30 s plus one second
 per MiB, so a large file on a slow link is not cut off at 30 s.
 
+A phone opens a file sealed whole only up to 50 MiB, so a larger one is sealed
+in chunks (`file-chunk-v1`: 1 MiB pieces, each sealed on its own) that the
+phone opens a piece at a time. That needs every device the push goes to (all
+keyed devices but this machine, or the `targetDeviceId`) to list
+`file-chunk-v1` in its `capabilities`; when one does not (an older app), the
+send is refused with `FILE_TOO_LARGE` naming it, and nothing is uploaded.
+
 Returns: `{ pushId: "...", fileKey: "...", fileSize: 42, encrypted: true, delivery: "Sent via cloud" }`
 
 **Always the cloud.** A file an agent sends goes through Hwip, whatever network

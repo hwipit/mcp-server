@@ -40,6 +40,7 @@ import { readFileSync, writeFileSync, mkdirSync, unlinkSync, linkSync } from 'fs
 import { homedir } from 'os';
 import { join } from 'path';
 import { randomBytes, webcrypto } from 'node:crypto';
+import { FILE_CHUNK_BYTES, FILE_CHUNK_PREFIX_BYTES, sealChunks } from './file-chunks.js';
 
 // Node 18 has no `crypto` global (unflagged only from 19.0.0) — resolve the
 // Web Crypto implementation explicitly so encryption works on the declared
@@ -390,6 +391,28 @@ export const encryptFileForDevices = async (
     ciphertext: Buffer.from(ciphertext),
     iv: toBase64(iv.buffer as ArrayBuffer),
     deviceKeyMap: await wrapForDevices(rawFileKey, cachedKeyPair.privateKey, recipients),
+  };
+};
+
+/**
+ * Encrypt file content in chunks (`file-chunk-v1`, `file-chunks.ts`) for the given recipient devices: a file a phone
+ * opens a piece at a time instead of holding it whole. `iv` is the nonce prefix and `chunk` the plain bytes per piece,
+ * both for the sealed file list.
+ */
+export const encryptFileInChunksForDevices = async (
+  content: Buffer,
+  recipients: DeviceRecipient[],
+): Promise<{ ciphertext: Buffer; iv: string; deviceKeyMap: DeviceKeyMap; chunk: number }> => {
+  if (!cachedKeyPair) throw new Error('Crypto not initialized');
+  const rawFileKey = randomBytes(32);
+  const prefix = randomBytes(FILE_CHUNK_PREFIX_BYTES);
+  const ciphertext = sealChunks(content, rawFileKey, prefix);
+  const raw = rawFileKey.buffer.slice(rawFileKey.byteOffset, rawFileKey.byteOffset + rawFileKey.byteLength) as ArrayBuffer;
+  return {
+    ciphertext,
+    iv: prefix.toString('base64'),
+    deviceKeyMap: await wrapForDevices(raw, cachedKeyPair.privateKey, recipients),
+    chunk: FILE_CHUNK_BYTES,
   };
 };
 

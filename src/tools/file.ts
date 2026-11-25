@@ -4,11 +4,12 @@ import { basename } from 'node:path';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { MAX_FILE_BYTES, type HwipApiClient } from '../api-client.js';
-import { formatPushTitle, type McpServerConfig } from '../config.js';
+import { formatPushTitle, listenerDeviceId, type McpServerConfig } from '../config.js';
 import { textResult, errorResult, formatToolError } from '../error-format.js';
 import { notingKeyChanges } from '../key-changes.js';
-import { encryptPushBodyForDevices, encryptFileForDevices, type DeviceRecipient } from '../crypto.js';
-import { E2E_REQUIRED, resolveAudience, sealFailed } from '../push-audience.js';
+import { encryptPushBodyForDevices, encryptFileForDevices, encryptFileInChunksForDevices, type DeviceRecipient, type SealedFileMeta } from '../crypto.js';
+import { needsChunks, unableToOpenChunks } from '../file-chunks.js';
+import { E2E_REQUIRED, resolveAudience, sealFailed, type AudienceDevice } from '../push-audience.js';
 import { inferMimeType } from '../mime.js';
 
 class FileTooLargeError extends Error {
@@ -29,10 +30,11 @@ const MAX_FILE_PATHS = 20;
  * Look before reading: the file lands in memory whole, so a directory or an oversize path must be turned
  * away while it is still just a path.
  */
-const checkPath = async (filePath: string) => {
+const checkPath = async (filePath: string): Promise<number> => {
   const info = await stat(filePath);
   if (!info.isFile()) throw new Error(`${filePath} is not a regular file`);
   if (info.size > MAX_FILE_BYTES) throw new FileTooLargeError(info.size);
+  return info.size;
 };
 
 /**
@@ -54,6 +56,22 @@ const resolvePayload = async (args: { filePath?: string; content?: string; fileN
     body: args.content!,
     size: new TextEncoder().encode(args.content!).byteLength,
   };
+};
+
+/**
+ * A file over what a phone opens sealed whole goes sealed in chunks, which only a device that lists the format opens: the
+ * refusal when one the push goes to does not. Undefined when the send can go.
+ */
+const chunkRefusal = (sizes: { name: string; size: number }[], devices: AudienceDevice[], target: string | undefined) => {
+  const big = sizes.find((s) => needsChunks(s.size));
+  if (!big) return undefined;
+  const unable = unableToOpenChunks(devices, target, listenerDeviceId());
+  if (unable.length === 0) return undefined;
+  return errorResult({
+    error: 'FILE_TOO_LARGE',
+    message: `${big.name} is ${big.size} bytes. A phone opens a file over 50 MiB only sealed in chunks, and ${unable.join(', ')} cannot open those yet`,
+    suggestion: 'Update the Hwip app on those devices, send to a device that opens it (targetDeviceId), or send a smaller file or an archive of the part the user needs',
+  });
 };
 
 const chunks = <T>(items: T[], size: number): T[][] =>
@@ -86,14 +104,29 @@ export const registerFileTool = (server: McpServer, client: HwipApiClient, confi
     recipients: DeviceRecipient[],
     target: string | undefined,
   ): Promise<Sent> => {
+    type SealedFile = Awaited<ReturnType<typeof encryptFileForDevices>> & { chunk?: number };
     let sealed: {
-      files: Awaited<ReturnType<typeof encryptFileForDevices>>[];
+      files: SealedFile[];
       push: Awaited<ReturnType<typeof encryptPushBodyForDevices>>;
     };
     try {
-      const files = [];
-      for (const payload of payloads) files.push(await encryptFileForDevices(payload.body, recipients));
-      sealed = { files, push: await encryptPushBodyForDevices({ title: pushTitle }, recipients) };
+      const files: SealedFile[] = [];
+      for (const payload of payloads) {
+        files.push(needsChunks(payload.size)
+          ? await encryptFileInChunksForDevices(typeof payload.body === 'string' ? Buffer.from(payload.body) : payload.body, recipients)
+          : await encryptFileForDevices(payload.body, recipients));
+      }
+      // A file sealed in chunks is known by the sealed file list, which names every file of the push, in order.
+      const metas: SealedFileMeta[] | undefined = files.some((f) => f.chunk !== undefined)
+        ? files.map((f, i) => ({
+          iv: f.iv,
+          name: payloads[i].fileName,
+          type: inferMimeType(payloads[i].fileName),
+          size: payloads[i].size,
+          ...(f.chunk !== undefined ? { chunk: f.chunk } : {}),
+        }))
+        : undefined;
+      sealed = { files, push: await encryptPushBodyForDevices({ title: pushTitle, ...(metas ? { files: metas } : {}) }, recipients) };
     } catch (err) {
       console.error('[Crypto] Sealing the file failed:', err);
       return { refused: errorResult({ error: E2E_REQUIRED, message: sealFailed('sealing the file failed') }) };
@@ -191,8 +224,9 @@ export const registerFileTool = (server: McpServer, client: HwipApiClient, confi
 
       if (filePaths) {
         // Every path is looked at before anything is read or sent: one bad path sends none, not some.
+        const sizes: { name: string; size: number }[] = [];
         try {
-          for (const path of filePaths) await checkPath(path);
+          for (const path of filePaths) sizes.push({ name: basename(path), size: await checkPath(path) });
         } catch (err) {
           return readFailure(err);
         }
@@ -201,6 +235,8 @@ export const registerFileTool = (server: McpServer, client: HwipApiClient, confi
         try {
           const audience = await resolveAudience(client);
           if ('refused' in audience) return errorResult({ error: audience.code, message: audience.refused });
+          const tooLarge = chunkRefusal(sizes, audience.devices, target);
+          if (tooLarge) return tooLarge;
           const pushIds: string[] = [];
           for (const [i, group] of groups.entries()) {
             // An agent that abandoned the call abandoned the rest of the send.
@@ -235,6 +271,8 @@ export const registerFileTool = (server: McpServer, client: HwipApiClient, confi
       try {
         const audience = await resolveAudience(client);
         if ('refused' in audience) return errorResult({ error: audience.code, message: audience.refused });
+        const tooLarge = chunkRefusal([{ name: payload.fileName, size: payload.size }], audience.devices, target);
+        if (tooLarge) return tooLarge;
         // An agent that abandoned the call abandoned the send.
         if (extra?.signal?.aborted) {
           return errorResult({ error: 'CANCELLED', message: 'The send was cancelled before the file went out' });

@@ -356,6 +356,37 @@ describe('encryptPushBodyForDevices', () => {
     });
 });
 
+// ── encryptFileInChunksForDevices ──
+
+describe('encryptFileInChunksForDevices', () => {
+    it('seals 1 MiB pieces a recipient opens with its unwrapped key and nonce = prefix ‖ index ‖ last', async () => {
+        const { encryptFileInChunksForDevices, getPublicKey, device, recipients } = await initEnabled();
+        const { createDecipheriv } = await import('node:crypto');
+        const plain = Buffer.from(Array.from({ length: 1_048_576 + 10 }, (_, i) => (i * 7) & 0xff));
+
+        const enc = await encryptFileInChunksForDevices(plain, recipients);
+
+        expect(enc.chunk).toBe(1_048_576);
+        const prefix = fromB64(enc.iv);
+        expect(prefix.length).toBe(7);
+        expect(enc.ciphertext.length).toBe(plain.length + 2 * 16);
+        // The file key, unwrapped as the phone does.
+        const privateKey = await crypto.subtle.importKey('pkcs8', fromB64(device.privateKey), ECDH, false, ['deriveKey']);
+        const sender = await crypto.subtle.importKey('spki', fromB64(getPublicKey()!), ECDH, false, []);
+        const shared = await crypto.subtle.deriveKey({ name: 'ECDH', public: sender }, privateKey, { name: 'AES-GCM', length: 256 }, false, ['decrypt']);
+        const { encryptedKey, keyIv } = JSON.parse(enc.deviceKeyMap['dev_phone']) as { encryptedKey: string; keyIv: string };
+        const fileKey = Buffer.from(await crypto.subtle.decrypt({ name: 'AES-GCM', iv: fromB64(keyIv) }, shared, fromB64(encryptedKey)));
+        const pieces = [enc.ciphertext.subarray(0, 1_048_576 + 16), enc.ciphertext.subarray(1_048_576 + 16)];
+        const opened = pieces.map((piece, index) => {
+            const nonce = Buffer.concat([prefix, Buffer.from([0, 0, 0, index, index === pieces.length - 1 ? 1 : 0])]);
+            const decipher = createDecipheriv('aes-256-gcm', fileKey, nonce);
+            decipher.setAuthTag(piece.subarray(piece.length - 16));
+            return Buffer.concat([decipher.update(piece.subarray(0, piece.length - 16)), decipher.final()]);
+        });
+        expect(Buffer.concat(opened).equals(plain)).toBe(true);
+    });
+});
+
 // ── encryptFileForDevices ──
 
 describe('encryptFileForDevices', () => {
