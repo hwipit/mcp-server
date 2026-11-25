@@ -1,12 +1,16 @@
 import type { HwipApiClient } from './api-client.js';
 import { listenerDeviceId } from './config.js';
 import { cryptoReady, getKeyPair, getPublicKey, selectRecipients, type DeviceRecipient } from './crypto.js';
+import type { ChunkAudienceDevice } from './file-chunks.js';
 import { noteOnce } from './key-changes.js';
 import { ensureSelfListed, registerOverClient, registerWhyText } from './self-register.js';
 import { observeDevices, TRUST_PATH } from './trust-pins.js';
 
 /** Who a push is sealed for, or why it was not sent. There is no unsealed push. */
-export type Audience = { recipients: DeviceRecipient[] } | { refused: string; code: typeof E2E_REQUIRED | typeof NO_APP_DEVICE };
+export type Audience = { recipients: DeviceRecipient[]; devices: AudienceDevice[] } | { refused: string; code: typeof E2E_REQUIRED | typeof NO_APP_DEVICE };
+
+/** A device as the list read for the send gave it. */
+export type AudienceDevice = ChunkAudienceDevice & { type?: string };
 
 /** The tool error a push that could not be sealed is reported as. */
 export const E2E_REQUIRED = 'E2E_REQUIRED';
@@ -37,7 +41,7 @@ export const resolveAudience = async (client: Pick<HwipApiClient, 'listDevices' 
   await cryptoReady();
   const publicKey = getPublicKey();
   if (!getKeyPair() || !publicKey) return refuse('this machine\'s keys did not load');
-  let devices: { deviceId: string; publicKey?: string; type?: string }[];
+  let devices: AudienceDevice[];
   try {
     devices = (await client.listDevices()).data;
     if (!Array.isArray(devices)) throw new Error('devices: unexpected response');
@@ -58,5 +62,5 @@ export const resolveAudience = async (client: Pick<HwipApiClient, 'listDevices' 
   observeDevices(trustPath, devices, { selfId });
   const recipients = selectRecipients(devices);
   if (recipients.length === 0) return refuse('no device has a per-device public key');
-  return { recipients };
+  return { recipients, devices };
 };

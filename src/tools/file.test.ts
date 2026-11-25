@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { mkdtempSync, rmSync, truncateSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -21,12 +21,14 @@ vi.mock('../crypto.js', () => ({
     samePublicKey: vi.fn((a: string, b: string) => a === b),
     encryptPushBodyForDevices: vi.fn(),
     encryptFileForDevices: vi.fn(),
+    encryptFileInChunksForDevices: vi.fn(),
 }));
 
 import { registerFileTool } from './file.js';
 import { ApiError, MAX_FILE_BYTES, type HwipApiClient } from '../api-client.js';
 import type { McpServerConfig } from '../config.js';
-import { getKeyPair, getPublicKey, encryptPushBodyForDevices, encryptFileForDevices } from '../crypto.js';
+import { getKeyPair, getPublicKey, encryptPushBodyForDevices, encryptFileForDevices, encryptFileInChunksForDevices } from '../crypto.js';
+import { FILE_CHUNK_CAPABILITY, WHOLE_OPEN_BYTES } from '../file-chunks.js';
 import { holdKeyChanges } from '../key-changes.js';
 
 const RECIPIENTS = [{ deviceId: 'dev_phone', publicKey: 'phone-pub' }];
@@ -71,6 +73,7 @@ beforeEach(() => {
     vi.mocked(getKeyPair).mockReturnValue({} as CryptoKeyPair);
     vi.mocked(getPublicKey).mockReturnValue('my-public-key');
     vi.mocked(encryptFileForDevices).mockResolvedValue({ ciphertext: CIPHER, iv: 'FILE_IV', deviceKeyMap: FILE_KEY_MAP });
+    vi.mocked(encryptFileInChunksForDevices).mockResolvedValue({ ciphertext: CIPHER, iv: 'PREFIX7', deviceKeyMap: FILE_KEY_MAP, chunk: 1_048_576 });
     vi.mocked(encryptPushBodyForDevices).mockResolvedValue({ body: 'ENC_BODY', deviceKeyMap: PUSH_KEY_MAP, senderPublicKey: 'SENDER_PUB', isEncrypted: true });
     vi.spyOn(console, 'error').mockImplementation(() => undefined);
 });
@@ -429,5 +432,93 @@ describe('registerFileTool — several files', () => {
         } finally {
             done();
         }
+    });
+});
+
+describe('registerFileTool — a file over what a phone opens sealed whole', () => {
+    const CHUNK_PHONE = { ...PHONE, nickname: 'Pixel', capabilities: [FILE_CHUNK_CAPABILITY] };
+    const OLD_PHONE = { deviceId: 'dev_old', publicKey: 'old-pub', type: 'ios', nickname: 'Old iPhone' };
+    let dir: string;
+    let big: string;
+    let small: string;
+
+    beforeEach(() => {
+        dir = mkdtempSync(join(tmpdir(), 'hwip-chunk-'));
+        big = join(dir, 'scan.pdf');
+        writeFileSync(big, '');
+        truncateSync(big, WHOLE_OPEN_BYTES); // over the whole cap once the tag is counted
+        small = join(dir, 'notes.txt');
+        writeFileSync(small, 'hi');
+    });
+
+    afterEach(() => rmSync(dir, { recursive: true, force: true }));
+
+    it('seals it in chunks when every device it goes to opens them, and names it in the sealed file list', async () => {
+        const client = mkClient([CHUNK_PHONE]);
+
+        const result = await runWith(client, { filePath: big }, mkConfig({ deviceId: undefined }));
+
+        expect(encryptFileInChunksForDevices).toHaveBeenCalledTimes(1);
+        expect(encryptFileForDevices).not.toHaveBeenCalled();
+        expect(encryptPushBodyForDevices).toHaveBeenCalledWith({
+            title: 'proj · scan.pdf',
+            files: [{ iv: 'PREFIX7', name: 'scan.pdf', type: 'application/pdf', size: WHOLE_OPEN_BYTES, chunk: 1_048_576 }],
+        }, RECIPIENTS);
+        expect(client.sendPush).toHaveBeenCalledWith(expect.objectContaining({
+            files: [expect.objectContaining({ fileName: 'scan.pdf', fileSize: WHOLE_OPEN_BYTES, iv: 'PREFIX7' })],
+        }));
+        expect(parse(result).pushId).toBe('push_f');
+    });
+
+    it('refuses it, sending nothing, when a device it goes to does not open chunks', async () => {
+        const client = mkClient([CHUNK_PHONE, OLD_PHONE]);
+
+        const result = await runWith(client, { filePath: big }, mkConfig({ deviceId: undefined }));
+
+        expect(result.isError).toBe(true);
+        expect(parse(result).error).toBe('FILE_TOO_LARGE');
+        expect(parse(result).message).toContain('Old iPhone');
+        expect(encryptFileInChunksForDevices).not.toHaveBeenCalled();
+        expectNothingSent(client);
+    });
+
+    it('sends it to the one device it targets when that one opens chunks', async () => {
+        const client = mkClient([CHUNK_PHONE, OLD_PHONE]);
+
+        const result = await runWith(client, { filePath: big, targetDeviceId: 'dev_phone' });
+
+        expect(parse(result).pushId).toBe('push_f');
+        expect(encryptFileInChunksForDevices).toHaveBeenCalledTimes(1);
+    });
+
+    it('refuses a set with one big file before any of it is sent', async () => {
+        const client = mkClient([OLD_PHONE]);
+
+        const result = await runWith(client, { filePaths: [small, big] }, mkConfig({ deviceId: undefined }));
+
+        expect(parse(result).error).toBe('FILE_TOO_LARGE');
+        expectNothingSent(client);
+    });
+
+    it('lists every file of a push with a chunked one, and seals the small one whole', async () => {
+        const client = mkClient([CHUNK_PHONE]);
+
+        await runWith(client, { filePaths: [small, big] }, mkConfig({ deviceId: undefined }));
+
+        expect(encryptFileForDevices).toHaveBeenCalledTimes(1);
+        expect(encryptFileInChunksForDevices).toHaveBeenCalledTimes(1);
+        expect(encryptPushBodyForDevices).toHaveBeenCalledWith(expect.objectContaining({
+            files: [
+                { iv: 'FILE_IV', name: 'notes.txt', type: 'text/plain', size: 2 },
+                { iv: 'PREFIX7', name: 'scan.pdf', type: 'application/pdf', size: WHOLE_OPEN_BYTES, chunk: 1_048_576 },
+            ],
+        }), RECIPIENTS);
+    });
+
+    it('keeps a push of small files as it was: sealed whole, with no file list', async () => {
+        await runWith(mkClient([CHUNK_PHONE]), { filePath: small });
+
+        expect(encryptFileInChunksForDevices).not.toHaveBeenCalled();
+        expect(encryptPushBodyForDevices).toHaveBeenCalledWith({ title: 'proj · notes.txt' }, RECIPIENTS);
     });
 });

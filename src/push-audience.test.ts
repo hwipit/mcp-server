@@ -65,7 +65,7 @@ describe('resolveAudience', () => {
         vi.mocked(cryptoReady).mockReturnValueOnce(new Promise<void>((resolve) => (started = () => { withKeys(); resolve(); })));
         const audience = resolveAudience(clientWith([PHONE]), { trustPath: NONE });
         started();
-        expect(await audience).toEqual({ recipients: [{ deviceId: 'dev_phone', publicKey: 'pub_phone' }] });
+        expect(await audience).toEqual({ recipients: [{ deviceId: 'dev_phone', publicKey: 'pub_phone' }], devices: [PHONE] });
     });
 
     it('seals for every device that carries a public key', async () => {
@@ -74,6 +74,7 @@ describe('resolveAudience', () => {
 
         expect(await resolveAudience(clientWith(devices), { trustPath: NONE })).toEqual({
             recipients: [{ deviceId: 'dev_phone', publicKey: 'pub_phone' }, { deviceId: 'dev_pc', publicKey: 'pub_pc' }],
+            devices,
         });
     });
 
@@ -124,7 +125,7 @@ describe('resolveAudience', () => {
 
         const audience = await resolveAudience(clientWith(devices), { trustPath: path, selfId: 'dev_pc' });
 
-        expect(audience).toEqual({ recipients: devices.map(({ deviceId, publicKey }) => ({ deviceId, publicKey })) });
+        expect(audience).toEqual({ recipients: devices.map(({ deviceId, publicKey }) => ({ deviceId, publicKey })), devices });
         const pins = JSON.parse(readFileSync(path, 'utf8')).devices as Record<string, { publicKey: string }>;
         expect(Object.fromEntries(Object.entries(pins).map(([id, pin]) => [id, pin.publicKey])))
             .toEqual({ dev_swapped: 'pub_new', dev_elsewhere: 'pub_elsewhere', dev_phone: 'pub_phone' });
@@ -145,7 +146,7 @@ describe('resolveAudience', () => {
         const client = clientWith([PHONE]);
 
         expect(await resolveAudience(client, { trustPath: NONE, selfId: 'dev_pc' }))
-            .toEqual({ recipients: [{ deviceId: 'dev_phone', publicKey: 'pub_phone' }] });
+            .toEqual({ recipients: [{ deviceId: 'dev_phone', publicKey: 'pub_phone' }], devices: [PHONE] });
         expect(client.registerDeviceKey).toHaveBeenCalledTimes(1);
         expect(client.registerDeviceKey).toHaveBeenCalledWith('dev_pc', 'my-public-key', expect.any(String));
         expect(client.listDevices).toHaveBeenCalledTimes(1);
@@ -183,7 +184,7 @@ describe('resolveAudience', () => {
         writeFileSync(path, '{ not json');
 
         expect(await resolveAudience(clientWith([PHONE]), { trustPath: path, selfId: 'dev_pc' }))
-            .toEqual({ recipients: [{ deviceId: 'dev_phone', publicKey: 'pub_phone' }] });
+            .toEqual({ recipients: [{ deviceId: 'dev_phone', publicKey: 'pub_phone' }], devices: [PHONE] });
         expect(readFileSync(path, 'utf8')).toBe('{ not json');
         expect(console.error).toHaveBeenCalledWith('[hwip] trust: the trust file is unreadable — pins not checked');
     });

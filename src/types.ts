@@ -49,6 +49,8 @@ export interface DeviceRecord {
   isOnline?: boolean;
   lastSeenAt?: string;
   publicKey?: string;
+  /** What the device says it reads beyond the base formats (`file-chunk-v1` …). */
+  capabilities?: string[];
   /** Where the device's listener takes local transfers (ADR-0013), or absent. */
   lan?: { host: string; port: number } | null;
   /** The tmux agent sessions this device's listener reports (a subset of hwip `AgentSession`). */
