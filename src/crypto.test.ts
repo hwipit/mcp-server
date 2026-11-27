@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync, existsSync, readFileSync } from 'node:fs';
+import { chmodSync, mkdtempSync, mkdirSync, rmSync, writeFileSync, existsSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -237,6 +237,47 @@ describe('initCrypto', () => {
         await expect(initCrypto('ak_test')).rejects.toThrow(/holds no keypair/);
         expect(readFileSync(deviceKeysPath(), 'utf-8')).toBe('{"publicKey":');
         expect(getKeyPair()).toBeNull();
+    });
+
+    it('uses the same owner and mode rules as config.json for device-keys.json', async () => {
+        const { deviceKeysModeProblem } = await import('./crypto.js');
+
+        expect(deviceKeysModeProblem({ uid: 0, mode: 0o100600 }, 501, '/h/.hwip/device-keys.json')).toEqual({
+            refuse: true,
+            why: '/h/.hwip/device-keys.json belongs to another user (uid 0), so it is being ignored',
+        });
+        expect(deviceKeysModeProblem({ uid: 501, mode: 0o100620 }, 501)).toMatchObject({
+            refuse: false,
+            why: expect.stringContaining('mode 620'),
+        });
+        expect(deviceKeysModeProblem({ uid: 501, mode: 0o100600 }, 501)).toBeNull();
+        expect(deviceKeysModeProblem({ uid: 501, mode: 0o100600 }, 0)).toBeNull();
+    });
+
+    it('refuses a device-keys.json that anyone can write', async () => {
+        const own = await makeKeyPair();
+        writeFileAt(deviceKeysPath(), own);
+        chmodSync(deviceKeysPath(), 0o666);
+        const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+        const { initCrypto, getPublicKey } = await import('./crypto.js');
+
+        await expect(initCrypto('ak_test')).rejects.toThrow(/chmod 600/);
+        expect(getPublicKey()).toBeNull();
+        expect(error).toHaveBeenCalledWith(expect.stringContaining('can be written by anyone (mode 666)'));
+    });
+
+    it('warns but still uses a device-keys.json that other users can read', async () => {
+        const own = await makeKeyPair();
+        writeFileAt(deviceKeysPath(), own);
+        chmodSync(deviceKeysPath(), 0o640);
+        const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+        const { initCrypto, getPublicKey } = await import('./crypto.js');
+
+        await expect(initCrypto('ak_test')).resolves.toBe(own.publicKey);
+        expect(getPublicKey()).toBe(own.publicKey);
+        expect(error.mock.calls.some(([msg]) => String(msg).includes('can be reached by other users (mode 640)'))).toBe(true);
     });
 
     it('writes the keypair with owner-only permissions', async () => {
