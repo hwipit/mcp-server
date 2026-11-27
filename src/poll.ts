@@ -129,7 +129,9 @@ export const pollForResponse = async (
         lastError = err;
         await reportProgress();
         const remaining = timeoutMs - (Date.now() - startTime);
-        await untilAborted(Promise.race([sleep(Math.max(0, Math.min(retryDelay(failures), remaining))), wake]));
+        const backoff = sleep(Math.max(0, Math.min(retryDelay(failures), remaining)));
+        // A settled wake ends the race at once, so it cannot cut the backoff short: a failing read would spin.
+        await untilAborted(wsSettled ? backoff : Promise.race([backoff, wake]));
         continue;
       }
       failures = 0;

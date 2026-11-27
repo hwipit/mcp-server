@@ -188,6 +188,14 @@ describe('registerNotifyTool', () => {
         expect(parse(result)).toEqual({ pushId: 'push_1', fileKey: 'key_1', autoFile: true, encrypted: true });
     });
 
+    it('cuts the preview between code points, never inside an emoji', async () => {
+        await runWith(mkClient(), { title: 'Report', body: 'a'.repeat(199) + '😀' + 'tail' });
+
+        const sealed = vi.mocked(encryptPushBodyForDevices).mock.calls[0][0] as { body: string };
+        expect(sealed.body).toBe('a'.repeat(199) + '😀...');
+        expect(sealed.body).not.toContain(String.fromCharCode(0xfffd));
+    });
+
     it.each([
         ['a short body', 'b'],
         ['a long body sent as a file', 'x'.repeat(250)],

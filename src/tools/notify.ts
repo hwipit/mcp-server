@@ -8,6 +8,7 @@ import { encryptPushBodyForDevices, encryptFileForDevices, type DeviceRecipient 
 import { E2E_REQUIRED, resolveAudience, sealFailed } from '../push-audience.js';
 import { inferMimeType } from '../mime.js';
 import { sanitizeText } from '../sanitize.js';
+import { sliceChars } from '../text-slice.js';
 
 // The device feed shows a short preview of the body. Anything longer gets
 // truncated there, so we attach the full text as a file for full viewing.
@@ -52,7 +53,7 @@ export const registerNotifyTool = (server: McpServer, client: HwipApiClient, con
           const fileMarkdown = `# ${title}\n\n${cleanBody}`;
           const fileBytes = new TextEncoder().encode(fileMarkdown).byteLength;
 
-          const preview = cleanBody.slice(0, PREVIEW_LENGTH) + '...';
+          const preview = sliceChars(cleanBody, PREVIEW_LENGTH) + '...';
 
           // Seal the attachment and the push body together, before anything is
           // uploaded: a failure in between would leave ciphertext under no push.
