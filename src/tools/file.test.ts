@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { mkdtempSync, rmSync, truncateSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, truncateSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
@@ -553,5 +553,82 @@ describe('registerFileTool — a file over what a phone opens sealed whole', () 
 
         expect(encryptFileInChunksForDevices).not.toHaveBeenCalled();
         expect(encryptPushBodyForDevices).toHaveBeenCalledWith({ title: 'proj · notes.txt' }, RECIPIENTS);
+    });
+});
+
+describe('registerFileTool — hwip state files', () => {
+    const originalHome = process.env.HOME;
+    let home: string;
+    beforeEach(() => {
+        home = mkdtempSync(join(tmpdir(), 'hwip-home-'));
+        mkdirSync(join(home, '.hwip', 'attachments', 'hevt_1'), { recursive: true });
+        process.env.HOME = home;
+    });
+    afterEach(() => {
+        if (originalHome === undefined) delete process.env.HOME;
+        else process.env.HOME = originalHome;
+        rmSync(home, { recursive: true, force: true });
+    });
+
+    it.each(['config.json', 'device-keys.json', 'trusted-devices.json'])('refuses ~/.hwip/%s and sends nothing', async (name) => {
+        const secret = join(home, '.hwip', name);
+        writeFileSync(secret, '{"apiKey":"x"}');
+        const client = mkClient();
+
+        const result = await runWith(client, { filePath: secret });
+
+        expect(result.isError).toBe(true);
+        expect(parse(result).error).toBe('INVALID_INPUT');
+        expectNothingSent(client);
+    });
+
+    it('refuses the same file through a symlink, and in a filePaths list', async () => {
+        const secret = join(home, '.hwip', 'device-keys.json');
+        writeFileSync(secret, '{}');
+        const link = join(home, 'innocent.txt');
+        symlinkSync(secret, link);
+        const client = mkClient();
+
+        expect(parse(await runWith(client, { filePath: link })).error).toBe('INVALID_INPUT');
+        expect(parse(await runWith(client, { filePaths: [link] })).error).toBe('INVALID_INPUT');
+        expectNothingSent(client);
+    });
+
+    it('still sends an answer attachment saved under ~/.hwip/attachments', async () => {
+        const shot = join(home, '.hwip', 'attachments', 'hevt_1', 'shot.png');
+        writeFileSync(shot, 'png');
+        const client = mkClient();
+
+        const result = await runWith(client, { filePath: shot });
+
+        expect(result.isError).toBeUndefined();
+        expect(client.sendPush).toHaveBeenCalledTimes(1);
+    });
+});
+
+describe('registerFileTool — a send that stops part way', () => {
+    it('names the pushes that already went when a later push fails', async () => {
+        const dir = mkdtempSync(join(tmpdir(), 'hwip-part-'));
+        try {
+            const paths = Array.from({ length: 7 }, (_, i) => {
+                const path = join(dir, `shot-${i + 1}.png`);
+                writeFileSync(path, 'png');
+                return path;
+            });
+            const client = mkClient();
+            client.sendPush
+                .mockResolvedValueOnce({ data: { pushId: 'push_a' } } as Awaited<ReturnType<HwipApiClient['sendPush']>>)
+                .mockRejectedValueOnce(new ApiError('boom', 'SERVER_ERROR', 500));
+
+            const result = await runWith(client, { filePaths: paths });
+
+            expect(result.isError).toBe(true);
+            const body = parse(result);
+            expect(body.message).toContain('push_a');
+            expect(body.message).toContain('boom');
+            expect(body.sentPushIds).toEqual(['push_a']);
+        } finally {
+            rmSync(dir, { recursive: true, force: true });
+        }
     });
 });

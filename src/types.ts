@@ -173,4 +173,6 @@ export interface ToolError {
   eventId?: string;
   retryAfter?: number;
   suggestion?: string;
+  /** Pushes of a multi-push send that went out before it stopped. */
+  sentPushIds?: string[];
 }

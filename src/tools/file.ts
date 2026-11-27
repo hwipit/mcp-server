@@ -1,16 +1,20 @@
 import { z } from 'zod';
-import { readFile, stat } from 'node:fs/promises';
-import { basename } from 'node:path';
+import { readFile, realpath, stat } from 'node:fs/promises';
+import { homedir } from 'node:os';
+import { basename, join, sep } from 'node:path';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { MAX_FILE_BYTES, type HwipApiClient } from '../api-client.js';
 import { formatPushTitle, listenerDeviceId, type McpServerConfig } from '../config.js';
 import { textResult, errorResult, formatToolError } from '../error-format.js';
+import type { ToolError } from '../types.js';
 import { notingKeyChanges } from '../key-changes.js';
 import { encryptPushBodyForDevices, encryptFileForDevices, encryptFileInChunksForDevices, type DeviceRecipient, type SealedFileMeta } from '../crypto.js';
 import { needsChunks, unableToOpenChunks } from '../file-chunks.js';
 import { E2E_REQUIRED, resolveAudience, sealFailed, type AudienceDevice } from '../push-audience.js';
 import { inferMimeType } from '../mime.js';
+
+class ProtectedPathError extends Error {}
 
 class FileTooLargeError extends Error {
   constructor(readonly size: number) {
@@ -27,11 +31,31 @@ export const MAX_FILES_PER_PUSH = 5;
 const MAX_FILE_PATHS = 20;
 
 /**
+ * The keys and API key under ~/.hwip are this server's own secrets: a path an agent was talked into must not carry
+ * them to the phone's feed. The answer files saved under ~/.hwip/attachments are the user's, and stay sendable.
+ * Judged on the real path, so a link to a secret is no way round.
+ */
+const refuseStateFile = async (filePath: string): Promise<void> => {
+  let real: string;
+  let state: string;
+  try {
+    real = await realpath(filePath);
+    state = await realpath(join(homedir(), '.hwip'));
+  } catch {
+    return; // no ~/.hwip, or nothing at the path: stat has already said what is wrong
+  }
+  if (real.startsWith(state + sep) && !real.startsWith(join(state, 'attachments') + sep)) {
+    throw new ProtectedPathError(`${filePath} is inside ~/.hwip, where hwip keeps its keys and settings; it is not sent`);
+  }
+};
+
+/**
  * Look before reading: the file lands in memory whole, so a directory or an oversize path must be turned
  * away while it is still just a path.
  */
 const checkPath = async (filePath: string): Promise<number> => {
   const info = await stat(filePath);
+  await refuseStateFile(filePath);
   if (!info.isFile()) throw new Error(`${filePath} is not a regular file`);
   if (info.size > MAX_FILE_BYTES) throw new FileTooLargeError(info.size);
   return info.size;
@@ -78,6 +102,13 @@ const chunks = <T>(items: T[], size: number): T[][] =>
   Array.from({ length: Math.ceil(items.length / size) }, (_, i) => items.slice(i * size, (i + 1) * size));
 
 const readFailure = (err: unknown) => {
+  if (err instanceof ProtectedPathError) {
+    return errorResult({
+      error: 'INVALID_INPUT',
+      message: err.message,
+      suggestion: 'Send a copy of what the user needs from outside ~/.hwip, or tell the user in the terminal',
+    });
+  }
   if (err instanceof FileTooLargeError) {
     return errorResult({
       error: 'FILE_TOO_LARGE',
@@ -238,6 +269,17 @@ export const registerFileTool = (server: McpServer, client: HwipApiClient, confi
           const tooLarge = chunkRefusal(sizes, audience.devices, target);
           if (tooLarge) return tooLarge;
           const pushIds: string[] = [];
+          // A stop part way says which pushes already went: sending the whole list again would double them.
+          const stoppedAfterSome = (result: CallToolResult): CallToolResult => {
+            if (pushIds.length === 0) return result;
+            const first = JSON.parse((result.content[0] as { text: string }).text) as ToolError;
+            return errorResult({
+              ...first,
+              message: `${first.message} — ${pushIds.length} of ${groups.length} pushes had already gone out (${pushIds.join(', ')}), so do not send those files again`,
+              sentPushIds: pushIds,
+            });
+          };
+          try {
           for (const [i, group] of groups.entries()) {
             // An agent that abandoned the call abandoned the rest of the send.
             if (extra?.signal?.aborted) {
@@ -248,12 +290,15 @@ export const registerFileTool = (server: McpServer, client: HwipApiClient, confi
               payloads = [];
               for (const path of group) payloads.push(await resolvePayload({ filePath: path }));
             } catch (err) {
-              return readFailure(err);
+              return stoppedAfterSome(readFailure(err));
             }
             const part = groups.length > 1 ? ` (${i + 1}/${groups.length})` : '';
             const sent = await sendOne(payloads, formatPushTitle(config.projectName, named + part), audience.recipients, target);
-            if ('refused' in sent) return sent.refused;
+            if ('refused' in sent) return stoppedAfterSome(sent.refused);
             pushIds.push(sent.pushId);
+          }
+          } catch (err) {
+            return stoppedAfterSome(formatToolError(err));
           }
           return textResult({ pushIds, fileCount: filePaths.length, encrypted: true, delivery: 'Sent via cloud' });
         } catch (err) {

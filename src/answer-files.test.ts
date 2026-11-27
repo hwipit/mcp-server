@@ -174,3 +174,21 @@ describe('saveAnswerFiles — answer files', () => {
     expect(answerFileBound(Number.NaN)).toBe(MAX_ANSWER_FILE_BYTES);
   });
 });
+
+describe('saveAnswerFiles — names that differ only in case', () => {
+  it('keeps both files, as a case-insensitive disk would otherwise merge them', async () => {
+    const { saveAnswerFiles } = await asAsker();
+    const a = await sealFile(Buffer.from('A'), 'user/u/a');
+    const b = await sealFile(Buffer.from('B'), 'user/u/b');
+    const dir = join(TMP, 'attachments');
+    const byKey: Record<string, Buffer> = { 'user/u/a': a.ciphertext, 'user/u/b': b.ciphertext };
+
+    const saved = await saveAnswerFiles('hevt_1', [a.wire, b.wire], [
+      { iv: a.wire.iv, name: 'Image.PNG', type: 'image/png', size: 1 },
+      { iv: b.wire.iv, name: 'image.png', type: 'image/png', size: 1 },
+    ], { selfId: 'dev_laptop', senderPublicKey: PHONE.publicKey, dir, fetchBytes: async (k: string) => byKey[k]! });
+
+    expect(new Set(saved.paths.map((p) => p.toLowerCase())).size).toBe(2);
+    expect(saved.paths.map((p) => readFileSync(p, 'utf8')).sort()).toEqual(['A', 'B']);
+  });
+});
