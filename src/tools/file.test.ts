@@ -56,10 +56,10 @@ const mkClient = (devices: unknown[] = [PHONE]) => ({
     sendPush: vi.fn<HwipApiClient['sendPush']>(async () => ({ data: { pushId: 'push_f' } }) as Awaited<ReturnType<HwipApiClient['sendPush']>>),
 });
 
-const runWith = (client: ReturnType<typeof mkClient>, args: Record<string, unknown>, config = mkConfig()) => {
+const runWith = (client: ReturnType<typeof mkClient>, args: Record<string, unknown>, config = mkConfig(), ctx?: unknown) => {
     const { server, run } = captureTool();
     registerFileTool(server, client as unknown as HwipApiClient, config);
-    return run(args);
+    return run(args, ctx);
 };
 
 const expectNothingSent = (client: ReturnType<typeof mkClient>) => {
@@ -179,6 +179,19 @@ describe('registerFileTool', () => {
 // Binary attachments (screenshots, PDFs) have to reach the device as bytes with
 // their real mime type — the clients pick the image viewer off
 // `fileType`/extension.
+describe('registerFileTool — an abandoned call', () => {
+    it('sends nothing when the agent abandoned the call before the file went out', async () => {
+        const ac = new AbortController();
+        ac.abort();
+        const client = mkClient();
+
+        const result = await runWith(client, { fileName: 'a.txt', content: 'hi' }, mkConfig(), { signal: ac.signal, sendNotification: vi.fn() });
+
+        expect(parse(result).error).toBe('CANCELLED');
+        expectNothingSent(client);
+    });
+});
+
 describe('registerFileTool — binary attachments', () => {
     it('seals a local image as its own bytes and names its image mime type', async () => {
         const client = mkClient();
@@ -413,6 +426,26 @@ describe('registerFileTool — several files', () => {
 
             expect(parse(result).error).toBe('FILE_READ_FAILED');
             expectNothingSent(client);
+        } finally {
+            done();
+        }
+    });
+
+    it('stops between pushes when the agent abandons the call, naming how many went out', async () => {
+        const { paths, done } = writeFiles(7);
+        try {
+            const ac = new AbortController();
+            const client = mkClient();
+            client.sendPush.mockImplementationOnce(async () => {
+                ac.abort();
+                return { data: { pushId: 'push_a' } } as Awaited<ReturnType<HwipApiClient['sendPush']>>;
+            });
+
+            const result = await runWith(client, { filePaths: paths }, mkConfig(), { signal: ac.signal, sendNotification: vi.fn() });
+
+            expect(parse(result).error).toBe('CANCELLED');
+            expect(parse(result).message).toContain('after 1 of 2 pushes');
+            expect(client.sendPush).toHaveBeenCalledTimes(1);
         } finally {
             done();
         }
