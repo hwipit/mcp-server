@@ -164,7 +164,7 @@ const ERROR_CODE_SHAPE = /^[A-Za-z0-9_.:-]{1,64}$/;
  * unified ideograph (IVS); every other selector — including the Mongolian FVS
  * (U+180B–U+180D, U+180F) — goes, so spacing a run out with an invisible
  * character no longer smuggles it past the rule. The same rule as cli's
- * `UNPRINTABLE` block (src/http-failure.ts): the lines below from
+ * `UNPRINTABLE` block (hwipit/cli src/http-failure.ts): the lines below from
  * `const UNPRINTABLE` through `sanitizeSmuggled` are character-identical there.
  */
 export const UNPRINTABLE = /(?:[\p{Cc}\p{Zl}\p{Zp}]|(?![\u200C\u200D])\p{Cf}|[\u034F\u115F\u1160\u3164\uFFA0])+/gu;

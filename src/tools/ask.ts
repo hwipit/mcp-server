@@ -44,7 +44,7 @@ const settleRemoteState = (
 };
 
 /** The seal's world for this server: the account API, this machine's keys, the listener's trust file. */
-export const sealDepsFor = (client: Pick<HwipApiClient, 'listDevices' | 'registerDeviceKey'>, config: McpServerConfig): AskSealDeps => ({
+export const sealDepsFor = (client: Pick<HwipApiClient, 'listDevices' | 'registerDeviceKey'>): AskSealDeps => ({
   // The server connects before crypto has started (index.ts): the first ask waits here.
   loadKeys: async () => {
     await cryptoReady();
@@ -194,7 +194,7 @@ export const registerAskTool = (server: McpServer, client: HwipApiClient, config
         const signal = ctx.signal;
         const abortedBeforeSend = () => new AskError('ABORTED', 'The tool call was cancelled before the question was sent', '');
         // The context is made only once the question is being sealed, inside the window the question has.
-        const sealDeps: AskSealDeps = { ...sealDepsFor(client, config), attach: liveAttach(client, timeout * 1000, signal) };
+        const sealDeps: AskSealDeps = { ...sealDepsFor(client), attach: liveAttach(client, timeout * 1000, signal) };
         // The lookups (keys, device list) take their own time: a cancel does not wait for them. They run on
         // unobserved, which sends nothing.
         const prepared = await Promise.race([

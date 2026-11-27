@@ -35,7 +35,7 @@ export const registerAgentSendTool = (
   server: McpServer,
   client: Pick<HwipApiClient, 'listDevices' | 'registerDeviceKey' | 'sendPush'>,
   config: McpServerConfig,
-  sealDeps: CommandSealDeps = sealDepsFor(client, config),
+  sealDeps: CommandSealDeps = sealDepsFor(client),
 ) => {
   server.registerTool(
     'hwip_agent_send',
