@@ -2,7 +2,7 @@ import { readdirSync, readFileSync, statSync, mkdirSync, openSync, writeSync, cl
 import { homedir, hostname } from 'os';
 import { randomBytes, createHash } from 'crypto';
 import { execFileSync } from 'child_process';
-import { join } from 'path';
+import { join, win32 } from 'path';
 import { insecureUrlWarning, wsUrlProblem } from './url-check.js';
 
 const DEFAULT_BASE_URL = 'https://api.hwip.app/v1';
@@ -88,7 +88,7 @@ export const detectProjectDir = (): string => {
 
 /** Last path segment of a directory: "/Users/me/code/hwip" -> "hwip". */
 const projectNameFromDir = (dir: string): string =>
-    dir.split('/').filter(Boolean).pop() ?? 'project';
+    win32.basename(dir) || 'project';
 
 /**
  * Prefix a push title with the project name so the device feed stays
