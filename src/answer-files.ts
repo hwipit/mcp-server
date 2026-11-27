@@ -100,14 +100,14 @@ const safeName = (name: string, fallback: string): string => {
   return fitBytes(base.slice(0, base.length - ext.length), MAX_NAME_BYTES - Buffer.byteLength(ext)) + ext;
 };
 
-/** `name.ext`, then `name-1.ext`, … — two answers' `image.png` are two files. */
+/** `name.ext`, then `name-1.ext`, … — two answers' `image.png` are two files. Names are taken without their case: a disk that ignores it would merge `Image.PNG` and `image.png`. */
 const freeName = (taken: Set<string>, name: string): string => {
   const dot = name.lastIndexOf('.');
   const [stem, ext] = dot > 0 ? [name.slice(0, dot), name.slice(dot)] : [name, ''];
   for (let n = 0; ; n++) {
     const candidate = n === 0 ? name : `${stem}-${n}${ext}`;
-    if (!taken.has(candidate)) {
-      taken.add(candidate);
+    if (!taken.has(candidate.toLowerCase())) {
+      taken.add(candidate.toLowerCase());
       return candidate;
     }
   }

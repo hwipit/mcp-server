@@ -162,6 +162,15 @@ export const registerAskTool = (server: McpServer, client: HwipApiClient, config
             suggestion: `Send the call again with each action's style one of ${STYLES.join(', ')}, or left out`,
           });
         }
+        // An id answers for its button: two buttons with one id, or one with none, come back as the same answer.
+        const ids = effectiveActions?.map((a) => a.id.trim()) ?? [];
+        if (ids.some((id) => id === '') || new Set(ids).size !== ids.length) {
+          return errorResult({
+            error: 'INVALID_INPUT',
+            message: 'every action needs an id that is not empty and that no other action has',
+            suggestion: 'Send the call again with a different id on each action',
+          });
+        }
         const cleanBody = sanitizeText(body);
 
         // A fallback is the one answer nobody gave, so it is never a `danger` button — checked first,

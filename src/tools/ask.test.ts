@@ -329,6 +329,22 @@ describe('registerAskTool', () => {
         expect(client.triggerHook).not.toHaveBeenCalled();
     });
 
+    it.each([
+        ['twice', [{ id: 'ok', label: 'A' }, { id: 'ok', label: 'B', style: 'danger' }]],
+        ['twice, one with spaces around', [{ id: 'ok', label: 'A' }, { id: ' ok ', label: 'B' }]],
+        ['empty', [{ id: '  ', label: 'A' }, { id: 'b', label: 'B' }]],
+    ])('refuses an action id that is %s, unsent', async (_why, actions) => {
+        const client = { triggerHook: vi.fn(async () => ({ data: { pushId: 'p', eventId: 'e1' } })) } satisfies Partial<HwipApiClient>;
+        const { server, run } = captureTool();
+        registerAskTool(server, stubClient(client), mkConfig());
+
+        const result = await run({ title: 'Q', actions, inputType: 'text', timeout: 120 });
+
+        expect(result.isError).toBe(true);
+        expect(parse(result)).toMatchObject({ error: 'INVALID_INPUT', message: expect.stringContaining('id') });
+        expect(client.triggerHook).not.toHaveBeenCalled();
+    });
+
     // The danger check goes by `style`: one that leaked in under another case is still the button it guards.
     it('refuses a danger fallback whose button was recovered from the body with its style in another case', async () => {
         const client = { triggerHook: vi.fn(async () => ({ data: { pushId: 'p', eventId: 'e1' } })) } satisfies Partial<HwipApiClient>;
