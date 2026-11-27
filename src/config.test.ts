@@ -251,6 +251,13 @@ describe('loadConfig', () => {
         expect(loadConfig().projectName).toBe('my-project');
     });
 
+    it('derives projectName from a Windows CLAUDE_PROJECT_DIR basename', async () => {
+        process.env.HWIP_API_KEY = 'ak';
+        process.env.CLAUDE_PROJECT_DIR = 'C:\\Users\\me\\proj';
+        const { loadConfig } = await import('./config.js');
+        expect(loadConfig().projectName).toBe('proj');
+    });
+
     it('uses CURSOR_PROJECT_DIR when CLAUDE_PROJECT_DIR is absent', async () => {
         process.env.HWIP_API_KEY = 'ak';
         process.env.CURSOR_PROJECT_DIR = '/work/cursor-proj';
