@@ -117,6 +117,8 @@ export const registerAskTool = (server: McpServer, client: HwipApiClient, config
               label: z.string().describe('Display label for the button'),
               style: z.enum(STYLES).default('secondary')
                 .describe('Button style (default: secondary)'),
+              prompt: z.string().min(1).max(500).optional()
+                .describe('Chat text for an action the user must order in their own words, e.g. "/land 152" for a merge a permission check refused to take from a tool result. Tapping this button answers the ask as usual and puts this text in the session\'s chat composer on the phone; the user sends it, and it arrives as their own prompt in a new turn. End your turn after such an answer instead of acting on it. Sealed like the label.'),
             }),
           )
           .min(1)

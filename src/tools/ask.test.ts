@@ -690,6 +690,23 @@ describe('registerAskTool', () => {
             );
         });
 
+        it('seals a choice prompt and keeps it out of what the server gets', async () => {
+            ready();
+            sealMock.openAnswer.mockResolvedValue({ ok: true, actionId: 'yes' });
+            polled.mockResolvedValue(event({ eventId: 'e1', status: 'responded', response: SEALED_RESPONSE }));
+            const { client, run } = setup();
+
+            await run({ title: 'Merge?', actions: [{ id: 'yes', label: 'Merge', style: 'primary', prompt: '/land 152' }, { id: 'no', label: 'No', style: 'secondary' }], timeout: 120 });
+
+            const sent = (client.triggerHook.mock.calls[0] as unknown as [string, Record<string, unknown>])[1];
+            expect(sent.actions).toEqual([{ id: 'yes', style: 'primary' }, { id: 'no', style: 'secondary' }]);
+            expect(JSON.stringify(sent)).not.toContain('/land');
+            expect(sealMock.prepareAsk).toHaveBeenCalledWith(
+                expect.objectContaining({ actions: [expect.objectContaining({ id: 'yes', prompt: '/land 152' }), expect.objectContaining({ id: 'no' })] }),
+                expect.anything(),
+            );
+        });
+
         it('returns the choice from the opened answer, opened for this question and its choices', async () => {
             ready();
             sealMock.openAnswer.mockResolvedValue({ ok: true, actionId: 'yes' });

@@ -474,11 +474,16 @@ export interface SealedCommandLabel {
   from?: string;
 }
 
-/** One button of a sealed question: `id` and `style` also reach the server in the clear, `label` never does. */
+/**
+ * One button of a sealed question: `id` and `style` also reach the server in the clear, `label` and `prompt` never do.
+ * `prompt` is chat text the phone puts in the asking session's composer when the button is tapped: the person sends it
+ * themselves, so it arrives as their own prompt, not as this tool's result.
+ */
 export interface SealedAskAction {
   id: string;
   label: string;
   style?: string;
+  prompt?: string;
 }
 
 /**
@@ -555,6 +560,7 @@ export interface SealedFileMeta {
 const MAX_ASK_ACTIONS = 10;
 const MAX_ACTION_ID_CHARS = 64;
 const MAX_ACTION_LABEL_CHARS = 100;
+const MAX_ACTION_PROMPT_CHARS = 500;
 const MAX_ASK_ID_CHARS = 128;
 /** Most files the summary lists, and the longest path it shows (bytes): the summary rides in a size-capped body. */
 const MAX_CONTEXT_LISTED = 20;
@@ -577,6 +583,12 @@ const assertAskWithinLimits = (ask: SealedAskLabel | undefined): void => {
   if (actions.length > MAX_ASK_ACTIONS) throw choices(`a question takes at most ${MAX_ASK_ACTIONS} choices`);
   if (actions.some((a) => a.id.length > MAX_ACTION_ID_CHARS)) throw choices(`a choice id is over ${MAX_ACTION_ID_CHARS} characters`);
   if (actions.some((a) => a.label.length > MAX_ACTION_LABEL_CHARS)) throw choices(`a choice label is over ${MAX_ACTION_LABEL_CHARS} characters`);
+  // A body-recovered action skips the tool's schema, so the type is checked here too: the reader drops a whole label
+  // whose prompt is not a string.
+  const badPrompt = (p: unknown) => p !== undefined && (typeof p !== 'string' || p.length === 0 || p.length > MAX_ACTION_PROMPT_CHARS);
+  if (actions.some((a) => badPrompt(a.prompt))) {
+    throw choices(`a choice prompt must be 1 to ${MAX_ACTION_PROMPT_CHARS} characters`);
+  }
 };
 
 /** The `code` of the errors above that a shorter choice list fixes. */
@@ -622,12 +634,17 @@ const askActions = (value: unknown): SealedAskAction[] | undefined => {
     const { id, label } = item;
     if (typeof id !== 'string' || id.length > MAX_ACTION_ID_CHARS) return undefined;
     if (typeof label !== 'string' || label.length > MAX_ACTION_LABEL_CHARS) return undefined;
-    if (!('style' in item) || item.style === undefined) {
-      actions.push({ id, label });
-      continue;
+    const action: SealedAskAction = { id, label };
+    if ('style' in item && item.style !== undefined) {
+      if (typeof item.style !== 'string') return undefined;
+      action.style = item.style;
     }
-    if (typeof item.style !== 'string') return undefined;
-    actions.push({ id, label, style: item.style });
+    if ('prompt' in item && item.prompt !== undefined) {
+      const { prompt } = item;
+      if (typeof prompt !== 'string' || prompt.length === 0 || prompt.length > MAX_ACTION_PROMPT_CHARS) return undefined;
+      action.prompt = prompt;
+    }
+    actions.push(action);
   }
   return actions;
 };
