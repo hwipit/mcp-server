@@ -917,7 +917,7 @@ describe('sealDepsFor', () => {
     // A wrong path pins where the cli listener never looks.
     it('reads the trust file at TRUST_PATH, and is the machine the listener registers', () => {
         vi.mocked(getPublicKey).mockReturnValue('PUB');
-        const deps = sealDepsFor({} as HwipApiClient, mkConfig());
+        const deps = sealDepsFor({} as HwipApiClient);
 
         expect(deps.trustPath).toBe(TRUST_PATH);
         expect(deps.self()).toEqual({ deviceId: listenerDeviceId(), publicKey: 'PUB' });
@@ -925,6 +925,6 @@ describe('sealDepsFor', () => {
 
     it('has no self before the keys load', () => {
         vi.mocked(getPublicKey).mockReturnValue(null);
-        expect(sealDepsFor({} as HwipApiClient, mkConfig()).self()).toBeNull();
+        expect(sealDepsFor({} as HwipApiClient).self()).toBeNull();
     });
 });
