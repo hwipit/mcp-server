@@ -34,7 +34,7 @@ import { observeDevices } from './trust-pins.js';
 export interface AskQuestion {
   title: string;
   body?: string;
-  actions?: { id: string; label: string; style?: string }[];
+  actions?: { id: string; label: string; style?: string; prompt?: string }[];
   placeholder?: string;
 }
 

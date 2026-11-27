@@ -173,6 +173,22 @@ describe('encryptPushBodyForDevices with labels', () => {
         expect(openedReply.ask).toBeUndefined();
     });
 
+    it('seals a choice prompt, and refuses an empty one or one over 500 characters as a choices error', async () => {
+        const file = readVectors();
+        const sender = await asDevice(file.keys.sender);
+        const to = [{ deviceId: 'dev_phone', publicKey: file.keys.recipient.publicKey }];
+        const ask = (prompt: string) => ({ id: 'abc', device: 'dev_laptop', actions: [{ id: 'land', label: 'Merge', prompt }] });
+
+        const sealed = await sender.encryptPushBodyForDevices({ title: 'T', ask: ask('/land 152') }, to);
+        const recipient = await asDevice(file.keys.recipient);
+        const opened = await recipient.decryptPushBodyForDevice(sealed.body, sealed.deviceKeyMap.dev_phone!, sealed.senderPublicKey);
+        expect(opened.ask?.actions?.[0]?.prompt).toBe('/land 152');
+
+        for (const prompt of ['', 'p'.repeat(501), 5 as unknown as string]) {
+            await expect(sender.encryptPushBodyForDevices({ title: 'T', ask: ask(prompt) }, to)).rejects.toMatchObject({ code: 'ask-choices-over-limits' });
+        }
+    });
+
     it('seals a command label with `from` and an attachment list the recipient device opens', async () => {
         const file = readVectors();
         const sender = await asDevice(file.keys.sender);
@@ -222,6 +238,15 @@ describe('decryptPushBodyForDevice label parsing', () => {
         expect((await openContent({ ask: { id: 'q', device: 'd', actions: [{ id: 'x'.repeat(64), label: 'y'.repeat(100) }] } })).ask).toBeDefined();
         expect((await openContent({ ask: { id: 'q', device: 'd', actions: [{ id: 'x'.repeat(65), label: 'ok' }] } })).ask).toBeUndefined();
         expect((await openContent({ ask: { id: 'q', device: 'd', actions: [{ id: 'x', label: 'y'.repeat(101) }] } })).ask).toBeUndefined();
+    });
+
+    it('keeps a choice prompt, and drops the ask label for an empty, too long or non-string prompt', async () => {
+        const opened = await openContent({ ask: { id: 'q', device: 'd', actions: [{ id: 'land', label: 'Merge', prompt: '/land 152' }] } });
+        expect(opened.ask?.actions).toEqual([{ id: 'land', label: 'Merge', prompt: '/land 152' }]);
+        expect((await openContent({ ask: { id: 'q', device: 'd', actions: [{ id: 'x', label: 'y', prompt: 'p'.repeat(500) }] } })).ask).toBeDefined();
+        expect((await openContent({ ask: { id: 'q', device: 'd', actions: [{ id: 'x', label: 'y', prompt: 'p'.repeat(501) }] } })).ask).toBeUndefined();
+        expect((await openContent({ ask: { id: 'q', device: 'd', actions: [{ id: 'x', label: 'y', prompt: '' }] } })).ask).toBeUndefined();
+        expect((await openContent({ ask: { id: 'q', device: 'd', actions: [{ id: 'x', label: 'y', prompt: 5 }] } })).ask).toBeUndefined();
     });
 
     it('drops labels of the wrong shape', async () => {
