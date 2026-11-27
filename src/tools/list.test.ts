@@ -33,6 +33,21 @@ describe('registerListTool', () => {
         });
     });
 
+    it('cuts the body between code points, never inside an emoji', async () => {
+        const client = {
+            listPushes: vi.fn(async () => ({
+                data: [{ pushId: 'p1', type: 'note', title: 'T', body: 'a'.repeat(99) + '😀' + 'tail', createdAt: '2026-01-01' }],
+                pagination: { hasMore: false },
+            })),
+        } satisfies Partial<HwipApiClient>;
+        const { server, run } = captureTool();
+        registerListTool(server, client as unknown as HwipApiClient);
+
+        const body = parse(await run({ limit: 5 }));
+
+        expect(body.pushes[0].body).toBe('a'.repeat(99) + '😀');
+    });
+
     it('marks an encrypted push and leaves its sealed body out', async () => {
         const client = {
             listPushes: vi.fn(async () => ({

@@ -249,6 +249,33 @@ describe('pollForResponse — failed reads', () => {
         await settled;
     });
 
+    it('backs off failed reads even when the WS has already settled', async () => {
+        vi.useRealTimers();
+        // A settled waiter makes the wake race end at once: without a sleep the
+        // loop spins. The read fails hard after 2000 calls so a spin ends the test.
+        let calls = 0;
+        const client = {
+            getHookEvent: vi.fn(async () => {
+                if (++calls > 2000) throw new ApiError('stop', 'UNAUTHORIZED', 401);
+                throw new TypeError('fetch failed');
+            }),
+        } as unknown as HwipApiClient;
+        const fakeWaiter = {
+            canWait: () => true,
+            subscribe: () => ({
+                settled: Promise.resolve(),
+                isConnected: () => true,
+                dispose: vi.fn(),
+            }),
+        };
+        const result = await pollForResponse(
+            client, 'hook_x', 'e1', 1, noProgressCtx,
+            fakeWaiter as unknown as Parameters<typeof pollForResponse>[5],
+        ).catch((e: unknown) => e);
+        expect(result).toBeDefined();
+        expect((client.getHookEvent as ReturnType<typeof vi.fn>).mock.calls.length).toBeLessThanOrEqual(5);
+    });
+
     it('wakes from a retry backoff when the WS says the answer landed', async () => {
         let settle: () => void = () => undefined;
         const fakeWaiter = {

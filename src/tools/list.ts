@@ -2,6 +2,7 @@ import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { HwipApiClient } from '../api-client.js';
 import { textResult, formatToolError } from '../error-format.js';
+import { sliceChars } from '../text-slice.js';
 
 export const registerListTool = (server: McpServer, client: HwipApiClient) => {
   server.registerTool(
@@ -35,7 +36,7 @@ export const registerListTool = (server: McpServer, client: HwipApiClient) => {
         const summary = result.data.map((p) => ({
           pushId: p.pushId,
           type: p.type,
-          ...(p.isEncrypted ? { encrypted: true } : { title: p.title, body: p.body?.slice(0, 100) }),
+          ...(p.isEncrypted ? { encrypted: true } : { title: p.title, body: p.body === undefined ? undefined : sliceChars(p.body, 100) }),
           createdAt: p.createdAt,
         }));
         return textResult({ pushes: summary, total: summary.length, hasMore: result.pagination.hasMore });

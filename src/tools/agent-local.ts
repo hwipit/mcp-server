@@ -6,6 +6,7 @@ import { errorResult, formatToolError, textResult } from '../error-format.js';
 import type { HwipApiClient } from '../api-client.js';
 import type { McpServerConfig } from '../config.js';
 import { listAgentTargets } from '../agent-target.js';
+import { sliceChars } from '../text-slice.js';
 
 /**
  * `hwip_agent_list` / `hwip_agent_read` — the agent sessions on THIS machine, through the
@@ -66,7 +67,7 @@ const badOutput = (detail: string): CallToolResult =>
     suggestion: 'The installed `hwip` CLI and this MCP server disagree about the output. Update both (`npm install -g @hwip/cli @hwip/mcp-server`).',
   });
 
-const shown = (text: string | undefined): string => (text ?? '').trim().slice(0, STDERR_SHOWN_CHARS);
+const shown = (text: string | undefined): string => sliceChars((text ?? '').trim(), STDERR_SHOWN_CHARS);
 
 /** A CLI that predates the subcommand refuses it with its old usage error (exit 2). */
 const isUnknownSubcommand = (stderr: string): boolean => stderr.includes("only 'send'") || stderr.includes('subcommands are');
