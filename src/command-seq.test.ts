@@ -166,3 +166,17 @@ describe('nextCommandNumber', () => {
         expect(existsSync(join(dir, 'command-seq.lock'))).toBe(false);
     });
 });
+
+describe('safe integer boundaries', () => {
+    it('should refuse a counter beyond the safe integer range', async () => {
+        writeFileSync(join(dir, 'command-seq'), '9007199254740993\n');
+
+        expect(await nextCommandNumber({ dir, now: fixedClock(1), sleep: noWait })).toEqual({ refused: 'io' });
+    });
+
+    it('should refuse when the clock hands out an unsafe number', async () => {
+        await nextCommandNumber({ dir, now: fixedClock(1), sleep: noWait });
+
+        expect(await nextCommandNumber({ dir, now: () => 2 ** 53, sleep: noWait })).toEqual({ refused: 'io' });
+    });
+});

@@ -559,3 +559,29 @@ describe('encryptFileForDevices', () => {
         expect(Object.keys(enc.deviceKeyMap)).toHaveLength(2);
     });
 });
+
+// ── publicKeySender: the cross-repo contract with the cli's commandKeys ──
+
+describe('publicKeySender', () => {
+    // Known SPKIs (from crypto-labels.vectors.json): the x coordinate in hex is the key the cli counts sealed
+    // command numbers by in the trust file's commandKeys — trust-pins must never drift from it.
+    const SENDER = 'MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEHAc2GtSDFwPwJvpzUThTNSOpbHBGR4oUhokQwqLlVRvfXp2Jdeg1o1TEkhRSUZIczLL5zQtY3Ce4AdicxRAk9A==';
+    const RECIPIENT = 'MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEOzphlLk5yV3VcTXN1OyEOpVCPsltY4535AuuwqIeYlT5QUB7twaqGufYn3Nt8fo6DXsbIYPI8bdKPMbXMcq08w==';
+
+    it('maps the known vectors to the fixed x-coordinate hex', async () => {
+        const { publicKeySender } = await import('./crypto.js');
+
+        expect(publicKeySender(SENDER)).toBe('1c07361ad4831703f026fa735138533523a96c7046478a14868910c2a2e5551b');
+        expect(publicKeySender(RECIPIENT)).toBe('3b3a6194b939c95dd57135cdd4ec843a95423ec96d638e77e40baec2a21e6254');
+    });
+
+    it('is null for anything that is not a device key', async () => {
+        const { publicKeySender } = await import('./crypto.js');
+
+        expect(publicKeySender('not-a-key')).toBeNull();
+        expect(publicKeySender('')).toBeNull();
+        // The same key in another spelling equals nothing, itself included — as samePublicKey judges it.
+        expect(publicKeySender(Buffer.from(SENDER, 'base64').toString('base64url'))).toBeNull();
+        expect(publicKeySender(Buffer.from(SENDER, 'base64').toString('hex'))).toBeNull();
+    });
+});

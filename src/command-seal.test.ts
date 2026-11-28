@@ -299,3 +299,19 @@ describe('sealedCommand', () => {
     expect(readFileSync(trustPath, 'utf8')).toBe(after);
   });
 });
+
+describe('sealedCommand input guards', () => {
+  it('refuses when the device list is not a list', async () => {
+    pinFile({ dev_other_pc: OTHER_PC.publicKey });
+    const { seal } = await asDevice(THIS_MACHINE);
+
+    expect(await seal.sealedCommand(COMMAND, depsFor({ listDevices: async () => 5 as never }))).toEqual({ kind: 'refused', cause: 'devices' });
+  });
+
+  it('refuses when this machine has no device identity', async () => {
+    pinFile({ dev_other_pc: OTHER_PC.publicKey });
+    const { seal } = await asDevice(THIS_MACHINE);
+
+    expect(await seal.sealedCommand(COMMAND, depsFor({ self: () => null }))).toEqual({ kind: 'refused', cause: 'keystore' });
+  });
+});
