@@ -1,4 +1,4 @@
-import { statSync } from 'fs';
+import { closeSync, constants, fstatSync, openSync, readFileSync, statSync } from 'fs';
 
 export type SensitiveFileProblem = { refuse: boolean; why: string };
 
@@ -42,6 +42,48 @@ export const sensitiveFileProblem = (
         return sensitiveFileModeProblem(statSync(file), process.getuid(), file, messages, strict);
     } catch {
         return null;
+    }
+};
+
+export type SensitiveFs = Pick<typeof import('fs'), 'openSync' | 'fstatSync' | 'readFileSync' | 'closeSync'>;
+
+/**
+ * Read a private file the way it was judged: open once, judge the open descriptor (`fstat`), read that same
+ * descriptor — a file swapped in between a path check and a path read is never the one that was read. Null
+ * when there is no such file (ENOENT). Any other error (EACCES, ELOOP, EIO …) means the file could not be
+ * judged, which is a refusal, never a pass. Judged strictly: see `sensitiveFileModeProblem`.
+ * A symlink is followed; the descriptor is the target. Windows has no owner or mode to read: judged by nothing.
+ */
+export const readPrivateFile = (
+    file: string,
+    messages: SensitiveFileMessages,
+    onWarning: (line: string) => void,
+    io: SensitiveFs = { openSync, fstatSync, readFileSync, closeSync },
+    env: { platform?: NodeJS.Platform; getuid?: () => number } = {},
+): string | null => {
+    const platform = env.platform ?? process.platform;
+    const getuid = env.getuid ?? process.getuid;
+    const judged = platform !== 'win32' && typeof getuid === 'function';
+    let fd: number;
+    try {
+        fd = io.openSync(file, constants.O_RDONLY);
+    } catch (err) {
+        const code = (err as NodeJS.ErrnoException).code;
+        if (code === 'ENOENT') return null;
+        if (!judged) throw err;
+        throw new Error(`${file} cannot be checked (${code ?? (err as Error).message}), refusing to use it`);
+    }
+    try {
+        if (judged) {
+            const problem = sensitiveFileModeProblem(io.fstatSync(fd), getuid!(), file, messages, true);
+            if (problem) {
+                onWarning(problem.why);
+                if (problem.refuse) throw new Error(problem.why);
+            }
+        }
+        return io.readFileSync(fd, 'utf-8');
+    } finally {
+        io.closeSync(fd);
     }
 };
 

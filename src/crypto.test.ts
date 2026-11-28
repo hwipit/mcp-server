@@ -258,6 +258,40 @@ describe('initCrypto', () => {
         expect(deviceKeysModeProblem({ uid: 501, mode: 0o100600 }, 0)).toBeNull();
     });
 
+    it('reads the key through one descriptor: open, fstat, read that descriptor', async () => {
+        const { readPrivateFile } = await import('./file-mode.js');
+        const calls: string[] = [];
+        const io = {
+            openSync: (() => { calls.push('open'); return 7; }) as never,
+            fstatSync: ((fd: number) => { calls.push(`fstat ${fd}`); return { uid: 501, mode: 0o100600 }; }) as never,
+            readFileSync: ((target: unknown) => { calls.push(`read ${String(target)}`); return '{}'; }) as never,
+            closeSync: ((fd: number) => { calls.push(`close ${fd}`); }) as never,
+        };
+        const messages = { ownerRefusal: () => 'o', worldWritableRefusal: () => 'w', exposedRefusal: () => 'e', exposedWarning: () => 'x' };
+
+        const text = readPrivateFile('/h/.hwip/device-keys.json', messages, () => undefined, io, { platform: 'linux', getuid: () => 501 });
+
+        expect(text).toBe('{}');
+        expect(calls).toEqual(['open', 'fstat 7', 'read 7', 'close 7']);
+    });
+
+    it('treats only a missing file as absent: any other open error refuses', async () => {
+        const { readPrivateFile } = await import('./file-mode.js');
+        const messages = { ownerRefusal: () => 'o', worldWritableRefusal: () => 'w', exposedRefusal: () => 'e', exposedWarning: () => 'x' };
+        const failing = (code: string) => ({
+            openSync: (() => { throw Object.assign(new Error(code), { code }); }) as never,
+            fstatSync: (() => { throw new Error('unreachable'); }) as never,
+            readFileSync: (() => { throw new Error('unreachable'); }) as never,
+            closeSync: (() => undefined) as never,
+        });
+        const env = { platform: 'linux' as const, getuid: () => 501 };
+
+        expect(readPrivateFile('/f', messages, () => undefined, failing('ENOENT'), env)).toBeNull();
+        for (const code of ['EACCES', 'ELOOP', 'EIO']) {
+            expect(() => readPrivateFile('/f', messages, () => undefined, failing(code), env)).toThrow(`cannot be checked (${code}), refusing to use it`);
+        }
+    });
+
     describe.skipIf(process.platform === 'win32' || process.getuid?.() === 0)('device-keys.json on disk', () => {
         it.each([0o666, 0o620, 0o640, 0o644])('refuses a device-keys.json with mode %o', async (mode) => {
             const own = await makeKeyPair();

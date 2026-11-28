@@ -37,7 +37,7 @@
 /// <reference lib="dom" />
 
 import { readFileSync, writeFileSync, mkdirSync, unlinkSync, linkSync } from 'fs';
-import { sayOnce, sensitiveFileModeProblem, sensitiveFileProblem, type SensitiveFileMessages, type SensitiveFileProblem } from './file-mode.js';
+import { readPrivateFile, sayOnce, sensitiveFileModeProblem, type SensitiveFileMessages, type SensitiveFileProblem } from './file-mode.js';
 import { homedir } from 'os';
 import { join } from 'path';
 import { randomBytes, webcrypto } from 'node:crypto';
@@ -181,13 +181,11 @@ export const deviceKeysModeProblem = (
 ): SensitiveFileProblem | null => sensitiveFileModeProblem(st, myUid, file, deviceKeysMessages, true);
 
 const loadDeviceKeys = (): ExportedKeyPair | null => {
-  const modeProblem = sensitiveFileProblem(DEVICE_KEYS_PATH, deviceKeysMessages, true);
-  if (modeProblem) {
-    sayOnce(`[Crypto] ${modeProblem.why}.`);
-    if (modeProblem.refuse) throw new Error(modeProblem.why);
-  }
+  // A refusal throws out of here (no keypair is better than a keypair someone else could have written).
+  const text = readPrivateFile(DEVICE_KEYS_PATH, deviceKeysMessages, (why) => sayOnce(`[Crypto] ${why}.`));
+  if (text === null) return null;
   try {
-    const parsed = JSON.parse(readFileSync(DEVICE_KEYS_PATH, 'utf-8')) as ExportedKeyPair;
+    const parsed = JSON.parse(text) as ExportedKeyPair;
     return parsed.publicKey && parsed.privateKey ? parsed : null;
   } catch {
     return null;
