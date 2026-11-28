@@ -531,3 +531,74 @@ describe('openAnswer', () => {
     expect(await open(response)).toEqual({ ok: true, actionId: 'approve' });
   });
 });
+
+// The sealed-label reader drops a whole label that is over its limits, so the seal must refuse at
+// exactly the reader's boundaries: the largest allowed question goes out, one past it does not.
+describe('ask limits', () => {
+  const actionsOf = (n: number, extra: Record<string, unknown> = {}) =>
+    Array.from({ length: n }, (_, i) => ({ id: `a${i}`, label: `A${i}`, ...extra }));
+
+  it.each([
+    ['a 128-character ask id', { newAskId: () => 'x'.repeat(128) }, undefined],
+    ['ten choices', {}, actionsOf(10)],
+    ['a 64-character choice id', {}, [{ id: 'x'.repeat(64), label: 'Go' }]],
+    ['a 100-character choice label', {}, [{ id: 'go', label: 'y'.repeat(100) }]],
+    ['a 500-character choice prompt', {}, [{ id: 'go', label: 'Go', prompt: 'p'.repeat(500) }]],
+  ])('seals a question with %s', async (_name, deps, actions) => {
+    const { seal } = await asDevice(ASKER);
+    const prepared = await seal.prepareAsk({ ...QUESTION, ...(actions ? { actions } : {}) }, depsFor(deps));
+    expect(prepared.kind).toBe('sealed');
+  });
+
+  it('refuses a 501-character choice prompt', async () => {
+    const { seal } = await asDevice(ASKER);
+    const prepared = await seal.prepareAsk({ ...QUESTION, actions: [{ id: 'go', label: 'Go', prompt: 'p'.repeat(501) }] }, depsFor());
+    expect(prepared).toEqual({ kind: 'refused', cause: 'too-large' });
+  });
+
+  it('refuses a question when the device list is not a list', async () => {
+    const { seal } = await asDevice(ASKER);
+    expect(await seal.prepareAsk(QUESTION, depsFor({ listDevices: async () => ({ nope: 1 }) as never })))
+      .toEqual({ kind: 'refused', cause: 'devices' });
+  });
+});
+
+// The server refuses an envelope past ASK_BODY_MAX_BYTES, so prepareAsk sheds the attachment before
+// that: a body measuring exactly the cap still carries it, one byte over goes without it.
+describe('the envelope the server takes for a question', () => {
+  const attachment = async () => ({
+    context: {} as never,
+    meta: { iv: 'AAECAwQFBgcICQoL', name: 'ask-context.json', type: 'application/vnd.hwip.ask-context+json', size: 1 } as never,
+    file: { fileKey: 'files/1', fileName: 'file', fileType: 'application/octet-stream', fileSize: 1, iv: 'AAECAwQFBgcICQoL', deviceKeyMap: { dev_phone: 'wrapped' } } as never,
+  }) as never;
+  const sealOf = (body: string) => async () => ({ body, senderPublicKey: ASKER.publicKey, deviceKeyMap: { dev_phone: 'k' } });
+
+  it('keeps the attachment when the sealed body measures exactly what the server takes', async () => {
+    const { seal } = await asDevice(ASKER);
+    const prepared = await seal.prepareAsk(QUESTION, depsFor({ attach: attachment, seal: sealOf('a'.repeat(48 * 1024)) as never }));
+    expect(prepared.kind).toBe('sealed');
+    if (prepared.kind !== 'sealed') return;
+    expect(prepared.files).toHaveLength(1);
+  });
+
+  it('leaves the attachment out when the sealed body is one byte over', async () => {
+    const { seal } = await asDevice(ASKER);
+    const prepared = await seal.prepareAsk(QUESTION, depsFor({ attach: attachment, seal: sealOf('a'.repeat(48 * 1024 + 1)) as never }));
+    expect(prepared.kind).toBe('sealed');
+    if (prepared.kind !== 'sealed') return;
+    expect(prepared.files).toBeUndefined();
+  });
+});
+
+// An answer that is only the exit flag is the user ending the loop: it counts with no text and no files.
+describe('openAnswer — the answer label alone', () => {
+  const ASK_ID = 'q7Zk2mV0wXb9Yc3dEfGhIg';
+  const answerFrom = async (content: PushBodyInput) =>
+    ({ sealed: await sealAs(PHONE, content, { dev_laptop: ASKER.publicKey }), respondedDeviceId: 'dev_phone' });
+
+  it('takes an exit flag with no text as the user ending the loop', async () => {
+    const { seal } = await asDevice(ASKER);
+    const response = await answerFrom({ answer: { ask: ASK_ID, exit: true } });
+    expect(await seal.openAnswer(response as never, ASK_ID, undefined, depsFor())).toEqual({ ok: true, exit: true });
+  });
+});

@@ -90,3 +90,18 @@ describe('registerListTool', () => {
         expect(parse(result).error).toBe('UNAUTHORIZED');
     });
 });
+
+// Zod runs at the SDK boundary, so the default and the cap live on the schema: pin them where a
+// changed number would otherwise reshape every caller's list silently.
+describe('hwip_list schema', () => {
+    it('defaults the limit to 5 and takes at most 20', () => {
+        let schema: Record<string, { parse: (v: unknown) => unknown }> | undefined;
+        const server = {
+            registerTool: (_n: string, cfg: { inputSchema: Record<string, { parse: (v: unknown) => unknown }> }) => { schema = cfg.inputSchema; },
+        } as never;
+        registerListTool(server as never, {} as HwipApiClient);
+        expect(schema!.limit.parse(undefined)).toBe(5);
+        expect(schema!.limit.parse(20)).toBe(20);
+        expect(() => schema!.limit.parse(21)).toThrow();
+    });
+});

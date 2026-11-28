@@ -632,3 +632,125 @@ describe('registerFileTool — a send that stops part way', () => {
         }
     });
 });
+
+// The caps the tool answers at: the schema's path cap and the memory cap on what is read.
+describe('registerFileTool — caps', () => {
+    const CHUNKY = { deviceId: 'dev_phone', publicKey: 'phone-pub', type: 'android', capabilities: [FILE_CHUNK_CAPABILITY] };
+    const CHUNK_PHONE = { deviceId: 'dev_phone', publicKey: 'phone-pub', type: 'android', capabilities: [FILE_CHUNK_CAPABILITY] };
+    it('takes at most 20 file paths', () => {
+        let schema: Record<string, { parse: (v: unknown) => unknown }> | undefined;
+        const server = {
+            registerTool: (_n: string, cfg: { inputSchema: Record<string, { parse: (v: unknown) => unknown }> }) => { schema = cfg.inputSchema; },
+        } as unknown as McpServer;
+        registerFileTool(server, mkClient() as unknown as HwipApiClient, mkConfig());
+        const paths = Array.from({ length: 20 }, (_, i) => `/tmp/hwip-f${i}.txt`);
+        expect(schema!.filePaths.parse(paths)).toEqual(paths);
+        expect(() => schema!.filePaths.parse([...paths, '/tmp/hwip-f20.txt'])).toThrow();
+    });
+
+    it('reads a file of exactly the largest size hwip carries', async () => {
+        const dir = mkdtempSync(join(tmpdir(), 'hwip-cap-'));
+        try {
+            const exact = join(dir, 'exact.bin');
+            writeFileSync(exact, '');
+            truncateSync(exact, MAX_FILE_BYTES);
+            const client = mkClient([CHUNKY]);
+
+            // The second path is unreadable, so nothing of the 1 GiB file is ever read in: the check
+            // happens path by path before any read.
+            const result = await runWith(client, { filePaths: [exact, join(dir, 'missing.bin')] }, mkConfig({ deviceId: undefined }));
+
+            expect(parse(result).error).toBe('FILE_READ_FAILED');
+            expect(parse(result).message).not.toContain('the most hwip carries');
+            expectNothingSent(client);
+        } finally {
+            rmSync(dir, { recursive: true, force: true });
+        }
+    });
+
+    it('refuses a file one byte past the largest size hwip carries', async () => {
+        const dir = mkdtempSync(join(tmpdir(), 'hwip-cap-'));
+        try {
+            const over = join(dir, 'over.bin');
+            writeFileSync(over, '');
+            truncateSync(over, MAX_FILE_BYTES + 1);
+            const client = mkClient([CHUNKY]);
+
+            const result = await runWith(client, { filePaths: [over] }, mkConfig({ deviceId: undefined }));
+
+            expect(parse(result).error).toBe('FILE_TOO_LARGE');
+            expect(parse(result).message).toContain(`the most hwip carries is ${MAX_FILE_BYTES}`);
+            expectNothingSent(client);
+        } finally {
+            rmSync(dir, { recursive: true, force: true });
+        }
+    });
+});
+
+describe('registerFileTool — several files, when a push is refused', () => {
+    it('answers the audience refusal as itself, sending nothing', async () => {
+        const dir = mkdtempSync(join(tmpdir(), 'hwip-many-'));
+        const paths = Array.from({ length: 2 }, (_, i) => {
+            const path = join(dir, `shot-${i + 1}.png`);
+            writeFileSync(path, `png-${i + 1}`);
+            return path;
+        });
+        try {
+            // No iPhone or Android app on the account: resolveAudience refuses the whole send.
+            const client = mkClient([{ deviceId: 'dev_pc', publicKey: 'pc-pub', type: 'cli' }]);
+
+            const result = await runWith(client, { filePaths: paths, title: 'Shots' });
+
+            expect(parse(result).error).toBe('NO_APP_DEVICE');
+            expectNothingSent(client);
+        } finally {
+            rmSync(dir, { recursive: true, force: true });
+        }
+    });
+
+    it('says which pushes already went out when a later push is refused', async () => {
+        const dir = mkdtempSync(join(tmpdir(), 'hwip-many-'));
+        const paths = Array.from({ length: 6 }, (_, i) => {
+            const path = join(dir, `shot-${i + 1}.png`);
+            writeFileSync(path, `png-${i + 1}`);
+            return path;
+        });
+        try {
+            const client = mkClient();
+            const sealed = { ciphertext: CIPHER, iv: 'FILE_IV', deviceKeyMap: FILE_KEY_MAP } as Awaited<ReturnType<typeof encryptFileForDevices>>;
+            vi.mocked(encryptFileForDevices)
+                .mockResolvedValueOnce(sealed).mockResolvedValueOnce(sealed).mockResolvedValueOnce(sealed)
+                .mockResolvedValueOnce(sealed).mockResolvedValueOnce(sealed)
+                .mockRejectedValueOnce(new Error('import failed'));
+
+            const result = await runWith(client, { filePaths: paths, title: 'Shots' });
+
+            const body = parse(result);
+            expect(body.error).toBe('E2E_REQUIRED');
+            expect(body.message).toContain('1 of 2 pushes had already gone out');
+            expect(body.sentPushIds).toEqual(['push_f']);
+        } finally {
+            rmSync(dir, { recursive: true, force: true });
+        }
+    });
+
+    it('names no pushes as gone when the refusal came before any', async () => {
+        const dir = mkdtempSync(join(tmpdir(), 'hwip-many-'));
+        const paths = Array.from({ length: 1 }, (_, i) => {
+            const path = join(dir, `shot-${i + 1}.png`);
+            writeFileSync(path, `png-${i + 1}`);
+            return path;
+        });
+        try {
+            const client = mkClient();
+            vi.mocked(encryptFileForDevices).mockRejectedValueOnce(new Error('import failed'));
+
+            const result = await runWith(client, { filePaths: paths, title: 'Shots' });
+
+            expect(parse(result)).toEqual({ error: 'E2E_REQUIRED', message: 'sealing the file failed; nothing was sent' });
+            expectNothingSent(client);
+        } finally {
+            rmSync(dir, { recursive: true, force: true });
+        }
+    });
+});
