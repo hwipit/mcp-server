@@ -94,3 +94,29 @@ describe('results that cannot change within a process', () => {
         expect(projectHash('/a')).toBe('1234567');
     });
 });
+
+describe('listenerDeviceId caching (t74)', () => {
+    const darwinUuid = () => '  "IOPlatformUUID" = "HWIP-TEST-MACHINE-ID-0001"\n';
+
+    it('runs ioreg once across two calls', async () => {
+        onDarwin();
+        io.execFileSync.mockReturnValue(darwinUuid());
+        const { listenerDeviceId } = await import('./config.js');
+        const first = listenerDeviceId();
+        const second = listenerDeviceId();
+        expect(second).toBe(first);
+        expect(io.execFileSync).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not remember a failed ioreg — retries on the next call', async () => {
+        onDarwin();
+        io.execFileSync.mockImplementationOnce(() => { throw new Error('ETIMEDOUT'); });
+        io.execFileSync.mockReturnValue(darwinUuid());
+        const { listenerDeviceId } = await import('./config.js');
+        listenerDeviceId();
+        const callsAfterFailure = io.execFileSync.mock.calls.length;
+        const retried = listenerDeviceId();
+        expect(io.execFileSync.mock.calls.length).toBeGreaterThan(callsAfterFailure);
+        expect(retried).toBe(`dev_listener_${(await import('crypto')).createHash('sha256').update('HWIP-TEST-MACHINE-ID-0001').digest('hex').slice(0, 8)}`);
+    });
+});

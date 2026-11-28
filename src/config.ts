@@ -475,9 +475,15 @@ const readMachineId = (): string | null => {
  *  into the agent chat). cli hashes the platform machine id first and falls
  *  back to a hostname hash pinned in a sticky file; mirror that order, reading
  *  (never writing) the file so both processes resolve the same id. */
+/** The machine-id hash cannot change within a process, so the success is cached
+ *  and the per-call ioreg exec (avg ~18ms, worst 5s) runs once. A failure is not
+ *  cached: it may be a slow start, and the next call retries (see projectHash). */
+let cachedListenerDeviceId: string | null = null;
+
 export const listenerDeviceId = (): string => {
+    if (cachedListenerDeviceId) return cachedListenerDeviceId;
     const machineId = readMachineId();
-    if (machineId) return hashListenerId(machineId);
+    if (machineId) return cachedListenerDeviceId = hashListenerId(machineId);
     try {
         const saved = readFileSync(LISTENER_ID_FILE, 'utf-8').trim();
         if (/^dev_listener_[0-9a-f]{8}$/.test(saved)) return saved;
