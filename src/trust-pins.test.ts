@@ -267,3 +267,34 @@ describe('withTrustLock', () => {
         expect(fn).not.toHaveBeenCalled();
     });
 });
+
+describe('trust file boundaries', () => {
+    it('accepts a command number starting at 0', async () => {
+        const key = await newKey();
+        write({ version: 1, devices: { dev_phone: { publicKey: key, pinnedAt: OLD } }, commands: { dev_phone: 0 } });
+
+        expect(observeDevices(trustPath, [{ deviceId: 'dev_phone', publicKey: key }], opts()).status).toBe('ok');
+        expect(read().commands).toEqual({ dev_phone: 0 });
+    });
+
+    it('calls a trust file with a null commands field unreadable', async () => {
+        write({ version: 1, devices: {}, commands: null });
+
+        expect(observeDevices(trustPath, [{ deviceId: 'dev_phone', publicKey: await newKey() }], opts()).status).toBe('unreadable');
+    });
+
+    it('calls a negative command number unreadable', async () => {
+        write({ version: 1, devices: {}, commands: { dev_phone: -1 } });
+
+        expect(observeDevices(trustPath, [{ deviceId: 'dev_phone', publicKey: await newKey() }], opts()).status).toBe('unreadable');
+    });
+
+    it('replaces a pin whose old key is not a device key without touching commandKeys', async () => {
+        const after = await newKey();
+        write({ version: 1, devices: { dev_phone: { publicKey: 'not-a-key', pinnedAt: OLD } }, commands: { dev_phone: 4 } });
+
+        expect(observeDevices(trustPath, [{ deviceId: 'dev_phone', publicKey: after }], opts())).toEqual({ pinned: [], replaced: ['dev_phone'], skipped: [], status: 'ok' });
+        expect(read().devices.dev_phone.publicKey).toBe(after);
+        expect(read().commandKeys).toBeUndefined();
+    });
+});

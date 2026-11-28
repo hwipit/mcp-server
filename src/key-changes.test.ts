@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -185,5 +185,72 @@ describe('withKeyChangeNote', () => {
 
     it('names a device without a name by its id', () => {
         expect(describeKeyChange({ deviceId: 'dev_ios_1', at: AT })).toMatch(/^dev_ios_1 changed its encryption key/);
+    });
+});
+
+describe('held changes', () => {
+    it('keeps a change a second hold would otherwise overwrite', () => {
+        holdKeyChanges([{ deviceId: 'dev_ios_1', at: AT }]);
+        holdKeyChanges([{ deviceId: 'dev_android_1', at: AT }]);
+
+        expect(takeKeyChanges(trustPath)).toEqual([
+            { deviceId: 'dev_ios_1', at: AT },
+            { deviceId: 'dev_android_1', at: AT },
+        ]);
+    });
+
+    it('merges a re-change of the same device into one entry', () => {
+        holdKeyChanges([{ deviceId: 'dev_ios_1', at: AT, name: 'iPhone' }]);
+        holdKeyChanges([{ deviceId: 'dev_ios_1', at: '2026-10-13T10:00:00.000Z', name: 'iPad' }]);
+
+        expect(takeKeyChanges(trustPath)).toEqual([{ deviceId: 'dev_ios_1', at: '2026-10-13T10:00:00.000Z', name: 'iPad' }]);
+    });
+});
+
+describe('nicknames the relay writes', () => {
+    const nameOf = (changes: ReturnType<typeof takeKeyChanges>): string | undefined => changes[0]?.name;
+
+    it('keeps a name of exactly 80 characters', () => {
+        recordKeyChanges(trustPath, [{ deviceId: 'dev_ios_1', at: AT, name: 'a'.repeat(80) }]);
+
+        expect(nameOf(takeKeyChanges(trustPath))).toHaveLength(80);
+    });
+
+    it('cuts a name longer than 80 to 80 characters', () => {
+        recordKeyChanges(trustPath, [{ deviceId: 'dev_ios_1', at: AT, name: 'b'.repeat(81) }]);
+
+        expect(nameOf(takeKeyChanges(trustPath))).toBe('b'.repeat(80));
+    });
+
+    it('folds runs of whitespace, including newlines, to one space', () => {
+        recordKeyChanges(trustPath, [{ deviceId: 'dev_ios_1', at: AT, name: 'iPhone \t 15\nPro   Max' }]);
+
+        expect(nameOf(takeKeyChanges(trustPath))).toBe('iPhone 15Pro Max');
+    });
+
+    it('strips C1 controls and line separators', () => {
+        recordKeyChanges(trustPath, [{ deviceId: 'dev_ios_1', at: AT, name: 'iPhone\u008515\u2028 Pro\u2029 Max' }]);
+
+        expect(nameOf(takeKeyChanges(trustPath))).toBe('iPhone15 Pro Max');
+    });
+});
+
+describe('the record file', () => {
+    it('reads at most the newest 64 from a record that holds 100', () => {
+        const changes = Array.from({ length: 100 }, (_, i) => ({ deviceId: `dev_${String(i).padStart(3, '0')}`, at: AT }));
+        writeFileSync(keyChangesPath(trustPath), `${JSON.stringify({ v: 1, changes })}\n`);
+
+        const taken = takeKeyChanges(trustPath);
+        expect(taken).toHaveLength(MAX_KEY_CHANGES);
+        expect(taken[0].deviceId).toBe('dev_036');
+        expect(taken[MAX_KEY_CHANGES - 1].deviceId).toBe('dev_099');
+    });
+
+    it('leaves no temp file behind when the record cannot be written', () => {
+        mkdirSync(keyChangesPath(trustPath)); // a directory blocks the rename
+
+        expect(recordKeyChanges(trustPath, [{ deviceId: 'dev_ios_1', at: AT }])).toBe(false);
+        expect(readdirSync(dir).filter((f) => f.endsWith('.tmp'))).toEqual([]);
+        rmSync(keyChangesPath(trustPath), { recursive: true }); // restore, for afterEach
     });
 });
