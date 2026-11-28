@@ -36,7 +36,7 @@
 
 /// <reference lib="dom" />
 
-import { readFileSync, writeFileSync, mkdirSync, unlinkSync, linkSync } from 'fs';
+import { writeFileSync, mkdirSync, unlinkSync, linkSync } from 'fs';
 import { readPrivateFile, sayOnce, sensitiveFileModeProblem, type SensitiveFileMessages, type SensitiveFileProblem } from './file-mode.js';
 import { homedir } from 'os';
 import { join } from 'path';
