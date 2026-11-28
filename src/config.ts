@@ -3,6 +3,7 @@ import { homedir, hostname } from 'os';
 import { randomBytes, createHash } from 'crypto';
 import { execFileSync } from 'child_process';
 import { join, win32 } from 'path';
+import { sayOnce, sensitiveFileModeProblem, sensitiveFileProblem, type SensitiveFileMessages, type SensitiveFileProblem } from './file-mode.js';
 import { insecureUrlWarning, wsUrlProblem } from './url-check.js';
 
 const DEFAULT_BASE_URL = 'https://api.hwip.app/v1';
@@ -120,7 +121,7 @@ type FileProblem = { kind: 'missing' } | { kind: 'unreadable' | 'invalid' | 'ign
 
 /**
  * Why this machine should not trust the config file as it stands, or null — the
- * rule of the cli's `configModeProblem` (src/config.ts), keep the two in step.
+ * rule of the cli's `configModeProblem` (src/config.ts), keep the two in step (the judging is `sensitiveFileModeProblem`, shared with device-keys.json).
  * The file holds the API key AND says where the key is sent (`baseUrl`, `wsUrl`),
  * so one that another user owns, or that anyone can write, is a way to redirect
  * the key. `refuse`: ignore the file; otherwise only warn. Group access to a file
@@ -129,42 +130,20 @@ type FileProblem = { kind: 'missing' } | { kind: 'unreadable' | 'invalid' | 'ign
  * Root may read what a user owns (sudo). This server only reads the file, so
  * unlike the cli it does not narrow the mode itself.
  */
+const configMessages: SensitiveFileMessages = {
+    ownerRefusal: (file, uid) => `${file} belongs to another user (uid ${uid}), so it is being ignored (HWIP_API_KEY still works)`,
+    worldWritableRefusal: (file, mode) => `${file} can be written by anyone (mode ${mode}), so it is being ignored — run \`chmod 600 ${file}\` (HWIP_API_KEY still works)`,
+    exposedWarning: (file, mode) => `${file} can be reached by other users (mode ${mode}) and holds your API key — run \`chmod 600 ${file}\``,
+};
+
 export const configModeProblem = (
     st: { uid: number; mode: number },
     myUid: number,
     file: string = join(homedir(), '.hwip', 'config.json'),
-): { refuse: boolean; why: string } | null => {
-    const mode = (st.mode & 0o777).toString(8);
-    const envStillWorks = 'HWIP_API_KEY still works';
-    if (st.uid !== myUid && myUid !== 0) {
-        return { refuse: true, why: `${file} belongs to another user (uid ${st.uid}), so it is being ignored (${envStillWorks})` };
-    }
-    if (st.mode & 0o002) {
-        return { refuse: true, why: `${file} can be written by anyone (mode ${mode}), so it is being ignored — run \`chmod 600 ${file}\` (${envStillWorks})` };
-    }
-    if (st.mode & 0o064) {
-        return { refuse: false, why: `${file} can be reached by other users (mode ${mode}) and holds your API key — run \`chmod 600 ${file}\`` };
-    }
-    return null;
-};
+): SensitiveFileProblem | null => sensitiveFileModeProblem(st, myUid, file, configMessages);
 
-/** Each message once per process: `loadConfig` and `legacyWsEnvNotice` both read the file. */
-const toldOnce = new Set<string>();
-const sayOnce = (line: string): void => {
-    if (toldOnce.has(line)) return;
-    toldOnce.add(line);
-    console.error(line);
-};
-
-/** `configModeProblem` for the file as it is now. A symlinked file (dotfiles) is judged by what it points at. Windows has no owner or mode to read. */
-const configFileProblem = (file: string): { refuse: boolean; why: string } | null => {
-    if (process.platform === 'win32' || typeof process.getuid !== 'function') return null;
-    try {
-        return configModeProblem(statSync(file), process.getuid(), file);
-    } catch {
-        return null;
-    }
-};
+/** `configModeProblem` for the file as it is now. A symlinked file (dotfiles) is judged by what it points at. */
+const configFileProblem = (file: string): SensitiveFileProblem | null => sensitiveFileProblem(file, configMessages);
 
 const loadFileConfig = (): { config: FileConfig; problem?: FileProblem } => {
     const file = join(homedir(), '.hwip', 'config.json');

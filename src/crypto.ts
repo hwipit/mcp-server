@@ -36,7 +36,8 @@
 
 /// <reference lib="dom" />
 
-import { readFileSync, writeFileSync, mkdirSync, unlinkSync, linkSync } from 'fs';
+import { writeFileSync, mkdirSync, unlinkSync, linkSync } from 'fs';
+import { readPrivateFile, sayOnce, sensitiveFileModeProblem, type SensitiveFileMessages, type SensitiveFileProblem } from './file-mode.js';
 import { homedir } from 'os';
 import { join } from 'path';
 import { randomBytes, webcrypto } from 'node:crypto';
@@ -165,9 +166,26 @@ const RETIRED_DEVICE_KEYS_PATH = join(OLD_KEYS_DIR, 'device-keys.json');
 const DEVICE_KEYS_DIR = join(homedir(), '.hwip');
 const DEVICE_KEYS_PATH = join(DEVICE_KEYS_DIR, 'device-keys.json');
 
+const deviceKeysMessages: SensitiveFileMessages = {
+  ownerRefusal: (file, uid) => `${file} belongs to another user (uid ${uid}), refusing to use it`,
+  worldWritableRefusal: (file, mode) => `${file} can be written by anyone (mode ${mode}), refusing to use it — run \`chmod 600 ${file}\``,
+  exposedRefusal: (file, mode) => `${file} holds this machine's private key and other users can reach it (mode ${mode}), refusing to use it — run \`chmod 600 ${file}\``,
+  exposedWarning: (file, mode) => `${file} can be reached by other users (mode ${mode}) and holds this machine's private key — run \`chmod 600 ${file}\``,
+};
+
+/** A private key is refused when anyone but its owner can read or write it (unlike config.json, which only warns). */
+export const deviceKeysModeProblem = (
+  st: { uid: number; mode: number },
+  myUid: number,
+  file: string = DEVICE_KEYS_PATH,
+): SensitiveFileProblem | null => sensitiveFileModeProblem(st, myUid, file, deviceKeysMessages, true);
+
 const loadDeviceKeys = (): ExportedKeyPair | null => {
+  // A refusal throws out of here (no keypair is better than a keypair someone else could have written).
+  const text = readPrivateFile(DEVICE_KEYS_PATH, deviceKeysMessages, (why) => sayOnce(`[Crypto] ${why}.`));
+  if (text === null) return null;
   try {
-    const parsed = JSON.parse(readFileSync(DEVICE_KEYS_PATH, 'utf-8')) as ExportedKeyPair;
+    const parsed = JSON.parse(text) as ExportedKeyPair;
     return parsed.publicKey && parsed.privateKey ? parsed : null;
   } catch {
     return null;
