@@ -914,6 +914,20 @@ describe('registerAskTool', () => {
             expect(result.isError).toBe(true);
         });
 
+        it('does not wait for a retry when the answer fails for any other reason', async () => {
+            vi.useFakeTimers();
+            ready();
+            sealMock.openAnswer.mockResolvedValue({ ok: false, cause: 'unreadable' });
+            polled.mockResolvedValue(event({ eventId: 'e1', status: 'responded', response: SEALED_RESPONSE }));
+            const { run } = setup();
+
+            const pending = run({ title: 'Deploy?', actions: ACTIONS, inputType: 'text', timeout: 120 });
+            await vi.advanceTimersByTimeAsync(5_000);
+            const result = await pending;
+
+            expect(sealMock.openAnswer).toHaveBeenCalledTimes(1);
+            expect(result.isError).toBe(true);
+        });
         it('sends nothing when this machine has no device keys', async () => {
             await realSeal();
             vi.mocked(getKeyPair).mockReturnValue(null);
@@ -942,5 +956,38 @@ describe('sealDepsFor', () => {
     it('has no self before the keys load', () => {
         vi.mocked(getPublicKey).mockReturnValue(null);
         expect(sealDepsFor({} as HwipApiClient).self()).toBeNull();
+    });
+});
+
+describe('registerAskTool schema', () => {
+    // Zod runs at the SDK boundary; the fake server hands back the schema so its defaults and caps
+    // are pinned here (a changed default would silently reshape every caller's ask).
+    const capture = () => {
+        let schema: Record<string, { parse: (v: unknown) => unknown }> | undefined;
+        const server = {
+            registerTool: (_n: string, cfg: { inputSchema: Record<string, { parse: (v: unknown) => unknown }> }) => { schema = cfg.inputSchema; },
+        } as unknown as McpServer;
+        return { server, schema: () => schema! };
+    };
+
+    it('defaults the wait to 300 seconds', () => {
+        const { server, schema } = capture();
+        registerAskTool(server, stubClient({}), mkConfig());
+        expect(schema().timeout.parse(undefined)).toBe(300);
+    });
+
+    it('takes at most four buttons', () => {
+        const { server, schema } = capture();
+        registerAskTool(server, stubClient({}), mkConfig());
+        const actions = Array.from({ length: 4 }, (_, i) => ({ id: `a${i}`, label: `A${i}` }));
+        expect(schema().actions.parse(actions)).toHaveLength(4);
+        expect(() => schema().actions.parse([...actions, { id: 'a4', label: 'A4' }])).toThrow();
+    });
+});
+
+describe('sealDepsFor — the device list shape', () => {
+    it('refuses a device list that is not a list', async () => {
+        const deps = sealDepsFor({ listDevices: async () => ({ data: { nope: true } }) } as unknown as HwipApiClient);
+        await expect(deps.listDevices()).rejects.toThrow('devices: unexpected response');
     });
 });

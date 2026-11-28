@@ -44,9 +44,12 @@ describe('sealChunks', () => {
 });
 
 describe('needsChunks', () => {
+  // The boundary is the phone's whole-open budget: plain bytes + one GCM tag against
+  // WHOLE_OPEN_BYTES — the 50 MiB the phones open whole, pinned as a literal wire value.
   it('is over what a phone opens sealed whole, tag included', () => {
-    expect(needsChunks(WHOLE_OPEN_BYTES - 16)).toBe(false);
-    expect(needsChunks(WHOLE_OPEN_BYTES - 15)).toBe(true);
+    expect(needsChunks(50 * 1024 * 1024 - 16)).toBe(false);
+    expect(needsChunks(50 * 1024 * 1024 - 15)).toBe(true);
+    expect(needsChunks(50 * 1024 * 1024)).toBe(true);
   });
 });
 
