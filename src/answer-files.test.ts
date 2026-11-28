@@ -49,7 +49,7 @@ afterEach(() => {
 const asAsker = async () => {
   const home = mkdtempSync(join(TMP, 'home-'));
   mkdirSync(join(home, '.hwip'), { recursive: true });
-  writeFileSync(join(home, '.hwip', 'device-keys.json'), JSON.stringify(ASKER));
+  writeFileSync(join(home, '.hwip', 'device-keys.json'), JSON.stringify(ASKER), { mode: 0o600 });
   process.env.HOME = home;
   vi.resetModules();
   await (await import('./crypto.js')).initCrypto();

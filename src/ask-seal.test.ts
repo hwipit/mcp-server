@@ -66,7 +66,7 @@ const pinnedKeys = (): Record<string, string> =>
 const asDevice = async (keys: KeyPair): Promise<{ crypto: typeof import('./crypto.js'); seal: typeof import('./ask-seal.js') }> => {
   const home = mkdtempSync(join(TMP, 'home-'));
   mkdirSync(join(home, '.hwip'), { recursive: true });
-  writeFileSync(join(home, '.hwip', 'device-keys.json'), JSON.stringify(keys));
+  writeFileSync(join(home, '.hwip', 'device-keys.json'), JSON.stringify(keys), { mode: 0o600 });
   process.env.HOME = home;
   vi.resetModules();
   const cryptoMod = await import('./crypto.js');

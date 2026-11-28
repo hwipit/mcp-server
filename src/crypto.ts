@@ -36,7 +36,8 @@
 
 /// <reference lib="dom" />
 
-import { readFileSync, writeFileSync, mkdirSync, unlinkSync, linkSync, statSync } from 'fs';
+import { readFileSync, writeFileSync, mkdirSync, unlinkSync, linkSync } from 'fs';
+import { sayOnce, sensitiveFileModeProblem, sensitiveFileProblem, type SensitiveFileMessages, type SensitiveFileProblem } from './file-mode.js';
 import { homedir } from 'os';
 import { join } from 'path';
 import { randomBytes, webcrypto } from 'node:crypto';
@@ -165,37 +166,24 @@ const RETIRED_DEVICE_KEYS_PATH = join(OLD_KEYS_DIR, 'device-keys.json');
 const DEVICE_KEYS_DIR = join(homedir(), '.hwip');
 const DEVICE_KEYS_PATH = join(DEVICE_KEYS_DIR, 'device-keys.json');
 
+const deviceKeysMessages: SensitiveFileMessages = {
+  ownerRefusal: (file, uid) => `${file} belongs to another user (uid ${uid}), refusing to use it`,
+  worldWritableRefusal: (file, mode) => `${file} can be written by anyone (mode ${mode}), refusing to use it — run \`chmod 600 ${file}\``,
+  exposedRefusal: (file, mode) => `${file} holds this machine's private key and other users can reach it (mode ${mode}), refusing to use it — run \`chmod 600 ${file}\``,
+  exposedWarning: (file, mode) => `${file} can be reached by other users (mode ${mode}) and holds this machine's private key — run \`chmod 600 ${file}\``,
+};
+
+/** A private key is refused when anyone but its owner can read or write it (unlike config.json, which only warns). */
 export const deviceKeysModeProblem = (
   st: { uid: number; mode: number },
   myUid: number,
   file: string = DEVICE_KEYS_PATH,
-): { refuse: boolean; why: string } | null => {
-  const mode = (st.mode & 0o777).toString(8);
-  if (st.uid !== myUid && myUid !== 0) {
-    return { refuse: true, why: `${file} belongs to another user (uid ${st.uid}), so it is being ignored` };
-  }
-  if (st.mode & 0o002) {
-    return { refuse: true, why: `${file} can be written by anyone (mode ${mode}), so it is being ignored — run \`chmod 600 ${file}\`` };
-  }
-  if (st.mode & 0o064) {
-    return { refuse: false, why: `${file} can be reached by other users (mode ${mode}) and holds this machine's private key — run \`chmod 600 ${file}\`` };
-  }
-  return null;
-};
-
-const deviceKeysFileProblem = (file: string): { refuse: boolean; why: string } | null => {
-  if (process.platform === 'win32' || typeof process.getuid !== 'function') return null;
-  try {
-    return deviceKeysModeProblem(statSync(file), process.getuid(), file);
-  } catch {
-    return null;
-  }
-};
+): SensitiveFileProblem | null => sensitiveFileModeProblem(st, myUid, file, deviceKeysMessages, true);
 
 const loadDeviceKeys = (): ExportedKeyPair | null => {
-  const modeProblem = deviceKeysFileProblem(DEVICE_KEYS_PATH);
+  const modeProblem = sensitiveFileProblem(DEVICE_KEYS_PATH, deviceKeysMessages, true);
   if (modeProblem) {
-    console.error(`[Crypto] ${modeProblem.why}.`);
+    sayOnce(`[Crypto] ${modeProblem.why}.`);
     if (modeProblem.refuse) throw new Error(modeProblem.why);
   }
   try {
