@@ -326,3 +326,71 @@ describe('pollForResponse — failed reads', () => {
         expect(client.getHookEvent).toHaveBeenCalledTimes(reads);
     });
 });
+
+describe('pollForResponse — deadline read, courtesy notice, sleep timer', () => {
+    afterEach(() => { vi.useRealTimers(); });
+
+    const connectedWaiter = () => ({
+        canWait: () => true,
+        subscribe: () => ({
+            settled: new Promise<void>(() => undefined),
+            isConnected: () => true,
+            dispose: vi.fn(),
+        }),
+    });
+
+    it('reads once more at the deadline instead of sleeping past it', async () => {
+        vi.useFakeTimers();
+        const reads: number[] = [];
+        const client = {
+            getHookEvent: vi.fn(async () => {
+                reads.push(Date.now());
+                return { data: { eventId: 'e1', status: reads.length >= 2 ? 'responded' : 'pending', response: { value: 'late' } } };
+            }),
+        } as unknown as HwipApiClient;
+        const t0 = Date.now();
+        const p = pollForResponse(client, 'h', 'e1', 10, noProgressCtx as never, connectedWaiter() as never);
+        await vi.advanceTimersByTimeAsync(10_000);
+        const result = await p;
+        expect(reads.map((r) => r - t0)).toEqual([0, 10_000]);
+        expect(result?.data.response?.value).toBe('late');
+        expect(Date.now() - t0).toBe(10_000);
+    });
+
+    it('keeps waiting when a progress notification cannot be sent', async () => {
+        vi.useFakeTimers();
+        const ctx = {
+            _meta: { progressToken: 'tok' },
+            sendNotification: vi.fn(async () => { throw new Error('transport closed'); }),
+        };
+        const client = mkClient([
+            { eventId: 'e1', status: 'pending' },
+            { eventId: 'e1', status: 'pending' },
+            { eventId: 'e1', status: 'pending' },
+            { eventId: 'e1', status: 'pending' },
+            { eventId: 'e1', status: 'pending' },
+            { eventId: 'e1', status: 'pending' },
+            { eventId: 'e1', status: 'responded', response: { value: 'ok' } },
+        ]);
+        const err = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+        const p = pollForResponse(client, 'h', 'e1', 30, ctx as never);
+        const settled = p.then((v) => v, (e: unknown) => e);
+        await vi.advanceTimersByTimeAsync(10_000);
+        const result = await settled;
+        err.mockRestore();
+        expect(ctx.sendNotification).toHaveBeenCalled();
+        expect((result as HookEventResponse).data.response?.value).toBe('ok');
+    });
+
+    it('clears the sleep timer when an abort ends the wait', async () => {
+        vi.useFakeTimers();
+        const ac = new AbortController();
+        const client = mkClient([{ eventId: 'e1', status: 'pending' }]);
+        const p = pollForResponse(client, 'h', 'e1', 60, { sendNotification: vi.fn(), signal: ac.signal } as never, connectedWaiter() as never);
+        const rejected = p.catch((e: unknown) => e);
+        await vi.advanceTimersByTimeAsync(100);
+        ac.abort();
+        expect(await rejected).toMatchObject({ code: 'ABORTED' });
+        expect(vi.getTimerCount()).toBe(0);
+    });
+});
