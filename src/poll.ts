@@ -130,6 +130,8 @@ export const pollForResponse = async (
   let lastError: unknown;
 
   try {
+    // Already cancelled: end before the first read, not after it.
+    if (ctx.signal?.aborted) throw new AskError('ABORTED', 'The tool call was cancelled', eventId);
 
     // The pass that starts at the deadline is the last: an answer that landed while we slept is still read.
     let last = false;

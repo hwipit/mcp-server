@@ -73,14 +73,13 @@ describe('pollForResponse — abort', () => {
     beforeEach(() => { vi.useFakeTimers(); });
     afterEach(() => { vi.useRealTimers(); });
 
-    it('rejects at once with ABORTED, and never polls on, when the signal is already aborted', async () => {
+    it('rejects at once with ABORTED, without any read, when the signal is already aborted', async () => {
         const { client } = timedClient([pending]);
         const p = pollForResponse(client, 'h', 'e1', 60, { ...ctx0, signal: AbortSignal.abort() } as never);
         const outcome = p.then((v) => v, (e: unknown) => e);
         await vi.advanceTimersByTimeAsync(70_000);
         expect(await outcome).toMatchObject({ code: 'ABORTED', eventId: 'e1' });
-        // The first read is issued before the race, so it may run once; the wait must not go on.
-        expect((client.getHookEvent as ReturnType<typeof vi.fn>).mock.calls.length).toBeLessThanOrEqual(1);
+        expect(client.getHookEvent).toHaveBeenCalledTimes(0);
     });
 
     it('leaves no abort listener behind once the wait has ended', async () => {
